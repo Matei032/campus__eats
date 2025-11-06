@@ -7,6 +7,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="CampusEats.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
         <PackageReference Include="FluentValidation" Version="12.1.0" />
         <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.0" />
         <PackageReference Include="MediatR" Version="13.1.0" />
@@ -23,7 +27,6 @@
     </ItemGroup>
 
     <ItemGroup>
-      <Folder Include="Common\Exceptions\" />
       <Folder Include="Common\Middleware\" />
       <Folder Include="Features\Loyalty\" />
       <Folder Include="Features\Payments\" />
