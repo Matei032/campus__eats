@@ -1,0 +1,8 @@
+[Bb]in/
+[Oo]bj/
+
+.idea/
+
+appsettings.Development.json
+
+docker-compose.override.yml

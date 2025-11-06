@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16
+    container_name: campuseats-db
+    environment:
+      - POSTGRES_USER=campuseats_user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=campuseats
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  api:
+    container_name: campuseats-api
+    build:
+      context: .
+      dockerfile: CampusEats.Backend/Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=campuseats;Username=campuseats_user;Password=password
+      - ASPNETCORE_ENVIRONMENT=Development
+
+  web:
+    container_name: campuseats-web
+    build:
+      context: .
+      dockerfile: CampusEats.Frontend/Dockerfile
+    ports:
+      - "8000:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
