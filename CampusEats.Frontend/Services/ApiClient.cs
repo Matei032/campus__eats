@@ -1,4 +1,4 @@
-using System.Net.Http.Json;
+﻿using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 
@@ -7,19 +7,15 @@ namespace CampusEats.Frontend.Services;
 public class ApiClient
 {
     private readonly HttpClient _http;
-    // IMPORTANT: set your backend URL here (http://localhost:5185/ or similar)
-    public static string BackendBaseUrl = "https://localhost:5001/"; // change to your backend
 
     public ApiClient(HttpClient http)
     {
         _http = http;
-        // For Blazor WASM templates, HttpClient is usually registered with the app's base address.
-        // Ensure Program.cs registers it with BackendBaseUrl (see README).
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
-    // MENU
+    // ===== MENU =====
     public Task<List<ProductDto>?> GetMenuAsync() =>
         _http.GetFromJsonAsync<List<ProductDto>>("api/menu/");
 
@@ -43,7 +39,7 @@ public class ApiClient
     public Task DeleteProductAsync(Guid id) =>
         _http.DeleteAsync($"api/menu/{id}");
 
-    // ORDERS
+    // ===== ORDERS =====
     public async Task<OrderDto?> CreateOrderAsync(CreateOrderCommand cmd)
     {
         var res = await _http.PostAsJsonAsync("api/orders/", cmd, JsonOpts);
@@ -54,13 +50,18 @@ public class ApiClient
     public Task<List<OrderDto>?> GetUserOrdersAsync(Guid userId) =>
         _http.GetFromJsonAsync<List<OrderDto>>($"api/orders/user/{userId}");
 
-    public Task<OrderDto?> GetOrderAsync(Guid orderId) =>
-        _http.GetFromJsonAsync<OrderDto>($"api/orders/{orderId}");
+    // Backend cere userId în query pentru GET by id
+    public Task<OrderDto?> GetOrderAsync(Guid orderId, Guid userId) =>
+        _http.GetFromJsonAsync<OrderDto>($"api/orders/{orderId}?userId={userId}");
 
-    public Task CancelOrderAsync(Guid orderId) =>
-        _http.DeleteAsync($"api/orders/{orderId}");
+    // Backend cere userId + (opțional) cancellationReason
+    public Task CancelOrderAsync(Guid orderId, Guid userId, string? cancellationReason = null)
+    {
+        var reason = cancellationReason is null ? "" : Uri.EscapeDataString(cancellationReason);
+        return _http.DeleteAsync($"api/orders/{orderId}?userId={userId}&cancellationReason={reason}");
+    }
 
-    // KITCHEN
+    // ===== KITCHEN =====
     public Task<List<OrderDto>?> GetPendingOrdersAsync() =>
         _http.GetFromJsonAsync<List<OrderDto>>("api/kitchen/pending");
 

@@ -16,7 +16,7 @@ else
     <div class="list-group">
       @foreach (var o in _orders)
       {
-          <a class="list-group-item list-group-item-action" href="order/@o.Id">
+          <a class="list-group-item list-group-item-action" href="order/@o.Id?userId=@_userIdText">
               <div class="d-flex justify-content-between">
                 <strong>@o.OrderNumber</strong>
                 <span class="badge bg-secondary">@o.Status</span>

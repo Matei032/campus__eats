@@ -43,7 +43,11 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy
-            .WithOrigins("http://localhost:8000") // doar frontendul tău Blazor
+            .WithOrigins(
+                "http://localhost:5086",  // Blazor WASM (HTTP) - launchSettings
+                "https://localhost:7263", // Blazor WASM (HTTPS) - launchSettings
+                "http://localhost:8000"   // Nginx/dev container (dacă îl folosiți)
+            )
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
@@ -87,7 +91,8 @@ menuGroup.MapGet("/{id:guid}", async (Guid id, ISender sender) =>
 {
     var result = await sender.Send(new GetProductById.Query(id));
     return result.IsSuccess ? Results.Ok(result.Value) : Results.NotFound(new { error = result.Error });
-});
+})
+.WithName("GetProductById");
 
 menuGroup.MapPost("/", async (CreateProduct.Command command, ISender sender) =>
 {
@@ -133,6 +138,7 @@ ordersGroup.MapGet("/user/{userId:guid}", async (Guid userId, ISender sender) =>
     return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
 });
 
+// Notă: acest endpoint cere obligatoriu userId în query (autorizație simplificată)
 ordersGroup.MapGet("/{orderId:guid}", async (Guid orderId, Guid userId, ISender sender) =>
 {
     var result = await sender.Send(new GetOrderById.Query { OrderId = orderId, UserId = userId });
