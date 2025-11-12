@@ -1,10 +1,10 @@
-﻿using CampusEats.Backend.Common;
+using CampusEats.Backend.Common;
 using CampusEats.Backend.Common.DTOs;
 using CampusEats.Backend.Persistence;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
-namespace CampusEats.Backend.Features.Orders;
+namespace CampusEats.Backend.Features.Kitchen;
 
 public static class GetPendingOrders
 {

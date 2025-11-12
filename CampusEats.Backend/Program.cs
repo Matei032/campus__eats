@@ -3,6 +3,7 @@ using CampusEats.Backend.Common.DTOs;
 using CampusEats.Backend.Persistence;
 using CampusEats.Backend.Features.Menu;
 using CampusEats.Backend.Features.Orders;
+using CampusEats.Backend.Features.Kitchen;
 using FluentValidation;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -193,35 +194,6 @@ ordersGroup.MapGet("/{orderId:guid}", async (Guid orderId, Guid userId, ISender 
     .Produces<OrderDto>(StatusCodes.Status200OK)
     .Produces<object>(StatusCodes.Status404NotFound);
 
-// GET /api/orders/kitchen/pending - Get pending orders for kitchen
-ordersGroup.MapGet("/kitchen/pending", async (ISender sender) =>
-    {
-        var query = new GetPendingOrders.Query();
-        var result = await sender.Send(query);
-    
-        return result.IsSuccess
-            ? Results.Ok(result.Value)
-            : Results.BadRequest(new { errors = result.Errors });
-    })
-    .WithName("GetPendingOrders")
-    .Produces<List<OrderDto>>(StatusCodes.Status200OK)
-    .Produces<object>(StatusCodes.Status400BadRequest);
-
-// PATCH /api/orders/{orderId}/status - Update order status
-ordersGroup.MapPatch("/{orderId:guid}/status", async (Guid orderId, UpdateOrderStatus.Command command, ISender sender) =>
-    {
-        // Override orderId from route
-        var updatedCommand = command with { OrderId = orderId };
-        var result = await sender.Send(updatedCommand);
-    
-        return result.IsSuccess
-            ? Results.Ok(result.Value)
-            : Results.BadRequest(new { errors = result.Errors });
-    })
-    .WithName("UpdateOrderStatus")
-    .Produces<OrderDto>(StatusCodes.Status200OK)
-    .Produces<object>(StatusCodes.Status400BadRequest);
-
 // DELETE /api/orders/{orderId} - Cancel order (soft delete)
 ordersGroup.MapDelete("/{orderId:guid}", async (Guid orderId, Guid userId, string? cancellationReason, ISender sender) =>
     {
@@ -241,6 +213,53 @@ ordersGroup.MapDelete("/{orderId:guid}", async (Guid orderId, Guid userId, strin
     })
     .WithName("CancelOrder")
     .Produces<OrderDto>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status400BadRequest);
+
+
+// KITCHEN ENDPOINTS
+var kitchenGroup = app.MapGroup("api/kitchen").WithTags("Kitchen");
+
+// GET /api/kitchen/pending - Get pending orders for kitchen
+kitchenGroup.MapGet("/pending", async (ISender sender) =>
+    {
+        var query = new GetPendingOrders.Query();
+        var result = await sender.Send(query);
+    
+        return result.IsSuccess
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    })
+    .WithName("GetPendingOrders")
+    .Produces<List<OrderDto>>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status400BadRequest);
+
+// PATCH /api/kitchen/orders/{orderId}/status - Update order status
+kitchenGroup.MapPatch("/orders/{orderId:guid}/status", async (Guid orderId, UpdateOrderStatus.Command command, ISender sender) =>
+    {
+        // Override orderId from route
+        var updatedCommand = command with { OrderId = orderId };
+        var result = await sender.Send(updatedCommand);
+    
+        return result.IsSuccess
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    })
+    .WithName("UpdateOrderStatus")
+    .Produces<OrderDto>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status400BadRequest);
+
+// GET /api/kitchen/inventory/daily - Get daily inventory report
+kitchenGroup.MapGet("/inventory/daily", async (DateTime? reportDate, ISender sender) =>
+    {
+        var query = new GetDailyInventoryReport.Query { ReportDate = reportDate };
+        var result = await sender.Send(query);
+    
+        return result.IsSuccess
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    })
+    .WithName("GetDailyInventoryReport")
+    .Produces<InventoryReportDto>(StatusCodes.Status200OK)
     .Produces<object>(StatusCodes.Status400BadRequest);
 
 app.Run();
