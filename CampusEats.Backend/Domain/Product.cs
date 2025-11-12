@@ -15,11 +15,8 @@ public class Product
     public string? DietaryRestrictions { get; set; }
     
     public bool IsAvailable { get; set; } = true;
-    
-    // Timestamps - REMOVED = DateTime.UtcNow
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     
-    // Navigation Properties
     public ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
 }

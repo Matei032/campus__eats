@@ -75,11 +75,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     
             entity.Property(p => p.IsAvailable)
                 .HasDefaultValue(true);
-    
-            // ✅ FIX: Changed from HasDefaultValue to HasDefaultValueSql
+            
             entity.Property(p => p.Allergens)
                 .HasColumnType("jsonb")
-                .HasDefaultValueSql("'[]'::jsonb"); // Empty JSON array
+                .HasDefaultValueSql("'[]'::jsonb");
     
             entity.Property(p => p.CreatedAt)
                 .HasDefaultValueSql("NOW()");
@@ -92,75 +91,63 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<Order>(entity =>
         {
             entity.HasKey(o => o.Id);
-            
+
             entity.Property(o => o.OrderNumber)
                 .IsRequired()
                 .HasMaxLength(50);
-            
+
             entity.HasIndex(o => o.OrderNumber)
                 .IsUnique();
-            
-            entity.Property(o => o.TotalAmount)
-                .HasColumnType("decimal(10,2)")
-                .IsRequired();
-            
+
             entity.Property(o => o.Status)
                 .IsRequired()
-                .HasConversion<string>();
-            
-            entity.Property(o => o.CancellationReason)
+                .HasMaxLength(50);
+
+            entity.Property(o => o.PaymentStatus)
+                .IsRequired()
+                .HasMaxLength(50);
+
+            entity.Property(o => o.PaymentMethod)
+                .HasMaxLength(50);
+
+            entity.Property(o => o.Notes)
                 .HasMaxLength(500);
-            
-            // Default value for CreatedAt
-            entity.Property(o => o.CreatedAt)
-                .HasDefaultValueSql("NOW()");
+
+            entity.Property(o => o.TotalAmount)
+                .HasColumnType("decimal(18,2)");
             
             entity.HasOne(o => o.User)
-                .WithMany(u => u.Orders)
+                .WithMany()
                 .HasForeignKey(o => o.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
-            
-            entity.HasOne(o => o.Payment)
-                .WithOne(p => p.Order)
-                .HasForeignKey<Payment>(p => p.OrderId)
+
+            entity.HasMany(o => o.OrderItems)
+                .WithOne(oi => oi.Order)
+                .HasForeignKey(oi => oi.OrderId)
                 .OnDelete(DeleteBehavior.Cascade);
-            
-            entity.HasIndex(o => o.UserId);
-            entity.HasIndex(o => o.Status);
-            entity.HasIndex(o => o.CreatedAt);
         });
 
         // ===== ORDER ITEM CONFIGURATION =====
         modelBuilder.Entity<OrderItem>(entity =>
         {
             entity.HasKey(oi => oi.Id);
-            
+
             entity.Property(oi => oi.Quantity)
                 .IsRequired();
-            
+
             entity.Property(oi => oi.UnitPrice)
-                .HasColumnType("decimal(10,2)")
-                .IsRequired();
-            
+                .HasColumnType("decimal(18,2)");
+
             entity.Property(oi => oi.Subtotal)
-                .HasColumnType("decimal(10,2)")
-                .IsRequired();
-            
+                .HasColumnType("decimal(18,2)");
+
             entity.Property(oi => oi.SpecialInstructions)
-                .HasMaxLength(200);
-            
-            entity.HasOne(oi => oi.Order)
-                .WithMany(o => o.OrderItems)
-                .HasForeignKey(oi => oi.OrderId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .HasMaxLength(500);
             
             entity.HasOne(oi => oi.Product)
-                .WithMany(p => p.OrderItems)
+                .WithMany()
                 .HasForeignKey(oi => oi.ProductId)
                 .OnDelete(DeleteBehavior.Restrict);
-            
-            entity.HasIndex(oi => oi.OrderId);
-            entity.HasIndex(oi => oi.ProductId);
         });
 
         // ===== PAYMENT CONFIGURATION =====
@@ -222,11 +209,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .HasForeignKey(lt => lt.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
             
-            entity.HasOne(lt => lt.Order)
-                .WithMany(o => o.LoyaltyTransactions)
-                .HasForeignKey(lt => lt.OrderId)
-                .OnDelete(DeleteBehavior.SetNull)
-                .IsRequired(false);
+            //entity.HasOne(lt => lt.Order)
+                //.WithMany(o => o.LoyaltyTransactions)
+                //.HasForeignKey(lt => lt.OrderId)
+                //.OnDelete(DeleteBehavior.SetNull)
+                //.IsRequired(false);
             
             entity.HasIndex(lt => lt.UserId);
             entity.HasIndex(lt => lt.CreatedAt);

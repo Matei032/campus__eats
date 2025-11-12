@@ -7,15 +7,70 @@ public static class DatabaseSeeder
 {
     public static async Task SeedAsync(AppDbContext context)
     {
-        // Check if we already have products
-        if (await context.Products.AnyAsync())
+        // Check if data already exists
+        if (await context.Products.AnyAsync() || await context.Users.AnyAsync())
         {
             return; // Database already seeded
         }
+        
+        // SEED USERS
+        var users = new List<User>
+        {
+            new()
+            {
+                Id = Guid.Parse("f1e2d3c4-b5a6-4948-8372-615849f7a0b1"),
+                Email = "student1@campus.ro",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Student123!"),
+                FullName = "Alex Popescu",
+                Role = "Student",
+                PhoneNumber = "+40712345678",
+                LoyaltyPoints = 150,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            },
+            new()
+            {
+                Id = Guid.Parse("a2b3c4d5-e6f7-5948-9372-715849a8b1c2"),
+                Email = "student2@campus.ro",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Student123!"),
+                FullName = "Maria Ionescu",
+                Role = "Student",
+                PhoneNumber = "+40723456789",
+                LoyaltyPoints = 200,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            },
+            new()
+            {
+                Id = Guid.Parse("b3c4d5e6-f7a8-6059-0483-826950b9c2d3"),
+                Email = "staff1@campus.ro",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Staff123!"),
+                FullName = "Ion Georgescu",
+                Role = "Staff",
+                PhoneNumber = "+40734567890",
+                LoyaltyPoints = 0,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            },
+            new()
+            {
+                Id = Guid.Parse("c4d5e6f7-a8b9-716a-1594-937061c0d3e4"),
+                Email = "admin@campus.ro",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin123!"),
+                FullName = "Admin User",
+                Role = "Admin",
+                PhoneNumber = "+40745678901",
+                LoyaltyPoints = 0,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            }
+        };
 
+        await context.Users.AddRangeAsync(users);
+        
         var products = new List<Product>
         {
-            // MAIN DISHES
+            // MAIN COURSES
             new()
             {
                 Id = Guid.NewGuid(),
@@ -219,7 +274,8 @@ public static class DatabaseSeeder
             }
         };
 
-        context.Products.AddRange(products);
+        await context.Products.AddRangeAsync(products);
+        
         await context.SaveChangesAsync();
     }
 }

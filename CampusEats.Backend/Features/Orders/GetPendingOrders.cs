@@ -1,0 +1,70 @@
+﻿using CampusEats.Backend.Common;
+using CampusEats.Backend.Common.DTOs;
+using CampusEats.Backend.Persistence;
+using MediatR;
+using Microsoft.EntityFrameworkCore;
+
+namespace CampusEats.Backend.Features.Orders;
+
+public static class GetPendingOrders
+{
+    // QUERY
+    public record Query : IRequest<Result<List<OrderDto>>>
+    {
+        // No parameters
+    }
+    
+    // HANDLER
+    internal sealed class Handler : IRequestHandler<Query, Result<List<OrderDto>>>
+    {
+        private readonly AppDbContext _context;
+
+        public Handler(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        public async Task<Result<List<OrderDto>>> Handle(Query request, CancellationToken cancellationToken)
+        {
+            // Get orders that need kitchen attention (Pending, Preparing)
+            var pendingStatuses = new[] { "Pending", "Preparing" };
+            
+            var orders = await _context.Orders
+                .AsNoTracking()  // Read-only query
+                .Where(o => pendingStatuses.Contains(o.Status))
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.Product)
+                .Include(o => o.User)  // Include user for display
+                .OrderBy(o => o.CreatedAt)  // Oldest first (FIFO - First In First Out)
+                .ToListAsync(cancellationToken);
+
+            // Map to DTOs
+            var orderDtos = orders.Select(order => new OrderDto
+            {
+                Id = order.Id,
+                OrderNumber = order.OrderNumber,
+                UserId = order.UserId,
+                TotalAmount = order.TotalAmount,
+                Status = order.Status,
+                PaymentStatus = order.PaymentStatus,
+                PaymentMethod = order.PaymentMethod,
+                Notes = order.Notes,
+                CreatedAt = order.CreatedAt,
+                UpdatedAt = order.UpdatedAt,
+                CompletedAt = order.CompletedAt,
+                OrderItems = order.OrderItems.Select(oi => new OrderItemDto
+                {
+                    Id = oi.Id,
+                    ProductId = oi.ProductId,
+                    ProductName = oi.Product.Name,
+                    Quantity = oi.Quantity,
+                    UnitPrice = oi.UnitPrice,
+                    Subtotal = oi.Subtotal,
+                    SpecialInstructions = oi.SpecialInstructions
+                }).ToList()
+            }).ToList();
+
+            return Result<List<OrderDto>>.Success(orderDtos);
+        }
+    }
+}

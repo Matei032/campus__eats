@@ -7,30 +7,29 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CampusEats.Backend.Features.Orders;
 
-public static class CancelOrder
+public static class UpdateOrderStatus
 {
     // COMMAND
     public record Command : IRequest<Result<OrderDto>>
     {
         public Guid OrderId { get; init; }
-        public Guid UserId { get; init; }  // For authorization (only order owner can cancel)
-        public string? CancellationReason { get; init; }
+        public string Status { get; init; } = string.Empty;
     }
     
     // VALIDATOR
     public class Validator : AbstractValidator<Command>
     {
+        private static readonly string[] ValidStatuses = { "Pending", "Preparing", "Ready", "Completed", "Cancelled" };
+
         public Validator()
         {
             RuleFor(x => x.OrderId)
                 .NotEmpty().WithMessage("Order ID is required");
 
-            RuleFor(x => x.UserId)
-                .NotEmpty().WithMessage("User ID is required");
-
-            RuleFor(x => x.CancellationReason)
-                .MaximumLength(500).WithMessage("Cancellation reason cannot exceed 500 characters")
-                .When(x => !string.IsNullOrEmpty(x.CancellationReason));
+            RuleFor(x => x.Status)
+                .NotEmpty().WithMessage("Status is required")
+                .Must(status => ValidStatuses.Contains(status))
+                .WithMessage($"Status must be one of: {string.Join(", ", ValidStatuses)}");
         }
     }
     
@@ -57,53 +56,28 @@ public static class CancelOrder
                 return Result<OrderDto>.Failure($"Order with ID {request.OrderId} not found");
             }
 
-            // 2. Authorization: Verify user owns this order
-            if (order.UserId != request.UserId)
+            // 2. Validate status transition
+            var validationResult = ValidateStatusTransition(order.Status, request.Status);
+            if (!string.IsNullOrEmpty(validationResult))
             {
-                return Result<OrderDto>.Failure("You are not authorized to cancel this order");
+                return Result<OrderDto>.Failure(validationResult);
             }
 
-            // 3. Validate cancellation is allowed
-            if (order.Status == "Completed")
-            {
-                return Result<OrderDto>.Failure("Cannot cancel completed order");
-            }
-
-            if (order.Status == "Cancelled")
-            {
-                return Result<OrderDto>.Failure("Order is already cancelled");
-            }
-
-            // 4. Optional: Time-based validation (only cancel within X minutes)
-            var timeSinceCreation = DateTime.UtcNow - order.CreatedAt;
-            if (order.Status == "Preparing" && timeSinceCreation.TotalMinutes > 5)
-            {
-                return Result<OrderDto>.Failure(
-                    "Cannot cancel order that has been preparing for more than 5 minutes. Please contact staff.");
-            }
-
-            // 5. Cancel order
-            order.Status = "Cancelled";
-            order.PaymentStatus = "Refunded";  // Auto-mark for refund
+            // 3. Update order status
+            order.Status = request.Status;
             order.UpdatedAt = DateTime.UtcNow;
-            
-            // Optional: Store cancellation reason in Notes
-            if (!string.IsNullOrEmpty(request.CancellationReason))
+
+            // 4. If completed, set completion timestamp
+            if (request.Status == "Completed")
             {
-                order.Notes = string.IsNullOrEmpty(order.Notes)
-                    ? $"Cancelled: {request.CancellationReason}"
-                    : $"{order.Notes}\nCancelled: {request.CancellationReason}";
+                order.CompletedAt = DateTime.UtcNow;
+                order.PaymentStatus = "Paid";  // Auto-mark as paid when completed
             }
 
-            // 6. TODO: Refund logic
-            // - If paid with Card → initiate refund
-            // - If paid with Loyalty → restore loyalty points
-            // - Send notification to customer
-
-            // 7. Save changes
+            // 5. Save changes
             await _context.SaveChangesAsync(cancellationToken);
 
-            // 8. Map to DTO
+            // 6. Map to DTO
             var orderDto = new OrderDto
             {
                 Id = order.Id,
@@ -130,6 +104,35 @@ public static class CancelOrder
             };
 
             return Result<OrderDto>.Success(orderDto);
+        }
+
+        // Helper: Validate status transitions
+        private static string? ValidateStatusTransition(string currentStatus, string newStatus)
+        {
+            // Valid transitions:
+            // Pending → Preparing, Cancelled
+            // Preparing → Ready, Cancelled
+            // Ready → Completed, Cancelled
+            // Completed → (no transitions)
+            // Cancelled → (no transitions)
+
+            if (currentStatus == newStatus)
+            {
+                return null; // Same status is OK (idempotent)
+            }
+
+            return (currentStatus, newStatus) switch
+            {
+                ("Pending", "Preparing") => null,
+                ("Pending", "Cancelled") => null,
+                ("Preparing", "Ready") => null,
+                ("Preparing", "Cancelled") => null,
+                ("Ready", "Completed") => null,
+                ("Ready", "Cancelled") => null,
+                ("Completed", _) => "Cannot change status of completed order",
+                ("Cancelled", _) => "Cannot change status of cancelled order",
+                _ => $"Invalid status transition from {currentStatus} to {newStatus}"
+            };
         }
     }
 }

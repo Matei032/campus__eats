@@ -2,10 +2,11 @@ using CampusEats.Backend.Common.Behaviors;
 using CampusEats.Backend.Common.DTOs;
 using CampusEats.Backend.Persistence;
 using CampusEats.Backend.Features.Menu;
+using CampusEats.Backend.Features.Orders;
 using FluentValidation;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using Npgsql; // ✅ ADD THIS
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -145,5 +146,101 @@ menuGroup.MapDelete("/{id:guid}", async (Guid id, ISender sender) =>
     .WithName("DeleteProduct")
     .Produces(204)
     .Produces(400);
+
+// ORDERS ENDPOINTS
+
+var ordersGroup = app.MapGroup("api/orders").WithTags("Orders");
+
+// POST /api/orders - Create new order
+ordersGroup.MapPost("/", async (CreateOrder.Command command, ISender sender) =>
+    {
+        var result = await sender.Send(command);
+    
+        return result.IsSuccess
+            ? Results.Created($"/api/orders/{result.Value!.Id}", result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    })
+    .WithName("CreateOrder")
+    .Produces<OrderDto>(StatusCodes.Status201Created)
+    .Produces<object>(StatusCodes.Status400BadRequest);
+
+// GET /api/orders/user/{userId} - Get user's orders
+ordersGroup.MapGet("/user/{userId:guid}", async (Guid userId, ISender sender) =>
+    {
+        var query = new GetUserOrders.Query { UserId = userId };
+        var result = await sender.Send(query);
+    
+        return result.IsSuccess
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    })
+    .WithName("GetUserOrders")
+    .Produces<List<OrderDto>>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status400BadRequest);
+
+// GET /api/orders/{orderId} - Get order by ID
+ordersGroup.MapGet("/{orderId:guid}", async (Guid orderId, Guid userId, ISender sender) =>
+    {
+        // userId from query parameter: /api/orders/{orderId}?userId={userId}
+        var query = new GetOrderById.Query { OrderId = orderId, UserId = userId };
+        var result = await sender.Send(query);
+    
+        return result.IsSuccess
+            ? Results.Ok(result.Value)
+            : Results.NotFound(new { errors = result.Errors });
+    })
+    .WithName("GetOrderById")
+    .Produces<OrderDto>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status404NotFound);
+
+// GET /api/orders/kitchen/pending - Get pending orders for kitchen
+ordersGroup.MapGet("/kitchen/pending", async (ISender sender) =>
+    {
+        var query = new GetPendingOrders.Query();
+        var result = await sender.Send(query);
+    
+        return result.IsSuccess
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    })
+    .WithName("GetPendingOrders")
+    .Produces<List<OrderDto>>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status400BadRequest);
+
+// PATCH /api/orders/{orderId}/status - Update order status
+ordersGroup.MapPatch("/{orderId:guid}/status", async (Guid orderId, UpdateOrderStatus.Command command, ISender sender) =>
+    {
+        // Override orderId from route
+        var updatedCommand = command with { OrderId = orderId };
+        var result = await sender.Send(updatedCommand);
+    
+        return result.IsSuccess
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    })
+    .WithName("UpdateOrderStatus")
+    .Produces<OrderDto>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status400BadRequest);
+
+// DELETE /api/orders/{orderId} - Cancel order (soft delete)
+ordersGroup.MapDelete("/{orderId:guid}", async (Guid orderId, Guid userId, string? cancellationReason, ISender sender) =>
+    {
+        // userId from query parameter: /api/orders/{orderId}?userId={userId}&cancellationReason={reason}
+        var command = new CancelOrder.Command 
+        { 
+            OrderId = orderId, 
+            UserId = userId,
+            CancellationReason = cancellationReason
+        };
+    
+        var result = await sender.Send(command);
+    
+        return result.IsSuccess
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    })
+    .WithName("CancelOrder")
+    .Produces<OrderDto>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status400BadRequest);
 
 app.Run();
