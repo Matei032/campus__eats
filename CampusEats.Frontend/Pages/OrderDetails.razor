@@ -1,0 +1,53 @@
+@page "/order/{OrderId:guid}"
+@inject ApiClient Api
+@code { [Parameter] public Guid OrderId { get; set; } }
+
+<h3 class="mb-3">Order Details</h3>
+
+@if (_order is null) { <p>Loading…</p> }
+else
+{
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="d-flex justify-content-between">
+        <h5 class="card-title">#@_order.OrderNumber</h5>
+        <span class="badge bg-secondary">@_order.Status</span>
+      </div>
+      <div class="small text-muted">@_order.CreatedAt:g</div>
+    </div>
+  </div>
+
+  <ul class="list-group mb-3">
+    @foreach (var it in _order.OrderItems)
+    {
+        <li class="list-group-item d-flex justify-content-between">
+          <span>@it.ProductName × @it.Quantity</span>
+           <span>@it.Subtotal.ToString("0.00") RON</span>
+        </li>
+    }
+  </ul>
+
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="/orders">Back</a>
+    <button class="btn btn-outline-danger" @onclick="Cancel">Cancel order</button>
+  </div>
+
+  @if (_msg is not null) { <div class="alert alert-info mt-3">@_msg</div> }
+}
+
+@code {
+    OrderDto? _order;
+    string? _msg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _order = await Api.GetOrderAsync(OrderId);
+    }
+
+    async Task Cancel()
+    {
+        await Api.CancelOrderAsync(OrderId);
+        _msg = "Order cancelled.";
+        _order = await Api.GetOrderAsync(OrderId);
+    }
+}

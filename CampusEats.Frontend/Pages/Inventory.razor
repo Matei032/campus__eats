@@ -1,0 +1,63 @@
+@page "/inventory"
+@inject ApiClient Api
+
+<h3 class="mb-3">Daily Inventory Report</h3>
+
+<div class="row g-2 align-items-end mb-3">
+    <div class="col-auto">
+        <input type="date" class="form-control" @bind="_date" />
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-danger" @onclick="Load">Load</button>
+    </div>
+</div>
+
+@if (_loading) { <p>Loading…</p> }
+else if (_error is not null) { <div class="alert alert-danger">@_error</div> }
+else if (_report is null) { <div class="alert alert-info">No data.</div> }
+else
+{
+    <div class="card mb-3">
+        <div class="card-body d-flex gap-4 flex-wrap">
+            <div><strong>Total revenue:</strong> @_report.TotalRevenue.ToString("0.00") RON</div>
+            <div><strong>Orders processed:</strong> @_report.TotalOrdersProcessed</div>
+            <div><strong>Items sold:</strong> @_report.TotalItemsSold</div>
+            <div><strong>Date:</strong> @_report.ReportDate:g</div>
+        </div>
+    </div>
+
+    <table class="table table-sm">
+        <thead><tr><th>Product</th><th>Category</th><th class="text-end">Qty</th><th class="text-end">Revenue</th><th class="text-end">Orders</th><th class="text-end">Avg order value</th></tr></thead>
+        <tbody>
+        @foreach (var it in _report.InventoryItems)
+        {
+            <tr>
+                <td>@it.ProductName</td>
+                <td>@it.Category</td>
+                <td class="text-end">@it.QuantitySold</td>
+                <td class="text-end">@it.Revenue.ToString("0.00")</td>
+                <td class="text-end">@it.OrderCount</td>
+                <td class="text-end">@it.AverageOrderValue.ToString("0.00")</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@code {
+    DateTime? _date;
+    bool _loading;
+    string? _error;
+    InventoryReportDto? _report;
+
+    async Task Load()
+    {
+        _loading = true; _error = null; _report = null;
+        try
+        {
+            _report = await Api.GetDailyInventoryAsync(_date);
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+}

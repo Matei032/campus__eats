@@ -11,255 +11,165 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ========== DATABASE CONFIG ==========
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
-dataSourceBuilder.EnableDynamicJson(); // Enable dynamic JSON serialization
+dataSourceBuilder.EnableDynamicJson();
 var dataSource = dataSourceBuilder.Build();
 
-// Database with configured data source
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(dataSource));
 
-// MediatR with Validation Behavior
+// ========== MEDIATR + VALIDATION ==========
 builder.Services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
     cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
 });
 
-// FluentValidation
 builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 
+// ========== SWAGGER ==========
 builder.Services.AddEndpointsApiExplorer();
-
 builder.Services.AddSwaggerGen(options =>
 {
-    // Use full type names to avoid schema ID conflicts
     options.CustomSchemaIds(type => type.FullName?.Replace("+", "."));
+});
+
+// ========== CORS CONFIG ==========
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy
+            .WithOrigins("http://localhost:8000") // doar frontendul tău Blazor
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
 });
 
 var app = builder.Build();
 
+// ========== USE CORS ==========
+app.UseCors("AllowFrontend");
+
+// ========== DEV TOOLS ==========
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
-// Disable HTTPS redirect in development
-if (!app.Environment.IsDevelopment())
+else
 {
     app.UseHttpsRedirection();
 }
 
-// ===== DATABASE SEEDING =====
+// ========== DATABASE SEEDING ==========
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    
-    // Apply pending migrations
+
     await context.Database.MigrateAsync();
-    
-    // Seed data
     await DatabaseSeeder.SeedAsync(context);
 }
 
+// ========== MENU ENDPOINTS ==========
 var menuGroup = app.MapGroup("api/menu").WithTags("Menu");
 
-// GET /api/menu - Get all products
 menuGroup.MapGet("/", async (ISender sender) =>
-    {
-        var query = new GetMenu.Query();
-        var result = await sender.Send(query);
-        
-        return result.IsSuccess 
-            ? Results.Ok(result.Value) 
-            : Results.BadRequest(new { error = result.Error });
-    })
-    .WithName("GetMenu")
-    .Produces<List<ProductDto>>();
+{
+    var result = await sender.Send(new GetMenu.Query());
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { error = result.Error });
+});
 
-// GET /api/menu/{id} - Get product by ID
 menuGroup.MapGet("/{id:guid}", async (Guid id, ISender sender) =>
-    {
-        var query = new GetProductById.Query(id);
-        var result = await sender.Send(query);
-        
-        return result.IsSuccess 
-            ? Results.Ok(result.Value) 
-            : Results.NotFound(new { error = result.Error });
-    })
-    .WithName("GetProductById")
-    .Produces<ProductDto>()
-    .Produces(404);
+{
+    var result = await sender.Send(new GetProductById.Query(id));
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.NotFound(new { error = result.Error });
+});
 
-// POST /api/menu - Create new product
 menuGroup.MapPost("/", async (CreateProduct.Command command, ISender sender) =>
-    {
-        var result = await sender.Send(command);
-        
-        if (!result.IsSuccess)
-        {
-            return Results.BadRequest(new { errors = result.Errors.Any() ? result.Errors : new List<string> { result.Error! } });
-        }
-        
-        return Results.CreatedAtRoute("GetProductById", new { id = result.Value!.Id }, result.Value);
-    })
-    .WithName("CreateProduct")
-    .Produces<ProductDto>(201)
-    .Produces(400);
+{
+    var result = await sender.Send(command);
+    if (!result.IsSuccess)
+        return Results.BadRequest(new { errors = result.Errors.Any() ? result.Errors : new List<string> { result.Error! } });
 
-// PUT /api/menu/{id} - Update product
+    return Results.CreatedAtRoute("GetProductById", new { id = result.Value!.Id }, result.Value);
+});
+
 menuGroup.MapPut("/{id:guid}", async (Guid id, UpdateProduct.Command command, ISender sender) =>
-    {
-        if (id != command.Id)
-        {
-            return Results.BadRequest(new { error = "ID in route does not match ID in body" });
-        }
-        
-        var result = await sender.Send(command);
-        
-        if (!result.IsSuccess)
-        {
-            return Results.BadRequest(new { errors = result.Errors.Any() ? result.Errors : new List<string> { result.Error! } });
-        }
-        
-        return Results.Ok(result.Value);
-    })
-    .WithName("UpdateProduct")
-    .Produces<ProductDto>()
-    .Produces(400);
+{
+    if (id != command.Id)
+        return Results.BadRequest(new { error = "ID in route does not match ID in body" });
 
-// DELETE /api/menu/{id} - Delete product
+    var result = await sender.Send(command);
+    if (!result.IsSuccess)
+        return Results.BadRequest(new { errors = result.Errors.Any() ? result.Errors : new List<string> { result.Error! } });
+
+    return Results.Ok(result.Value);
+});
+
 menuGroup.MapDelete("/{id:guid}", async (Guid id, ISender sender) =>
-    {
-        var command = new DeleteProduct.Command(id);
-        var result = await sender.Send(command);
-        
-        if (!result.IsSuccess)
-        {
-            return Results.BadRequest(new { error = result.Error });
-        }
-        
-        return Results.NoContent();
-    })
-    .WithName("DeleteProduct")
-    .Produces(204)
-    .Produces(400);
+{
+    var result = await sender.Send(new DeleteProduct.Command(id));
+    return result.IsSuccess ? Results.NoContent() : Results.BadRequest(new { error = result.Error });
+});
 
-// ORDERS ENDPOINTS
-
+// ========== ORDERS ENDPOINTS ==========
 var ordersGroup = app.MapGroup("api/orders").WithTags("Orders");
 
-// POST /api/orders - Create new order
 ordersGroup.MapPost("/", async (CreateOrder.Command command, ISender sender) =>
-    {
-        var result = await sender.Send(command);
-    
-        return result.IsSuccess
-            ? Results.Created($"/api/orders/{result.Value!.Id}", result.Value)
-            : Results.BadRequest(new { errors = result.Errors });
-    })
-    .WithName("CreateOrder")
-    .Produces<OrderDto>(StatusCodes.Status201Created)
-    .Produces<object>(StatusCodes.Status400BadRequest);
+{
+    var result = await sender.Send(command);
+    return result.IsSuccess
+        ? Results.Created($"/api/orders/{result.Value!.Id}", result.Value)
+        : Results.BadRequest(new { errors = result.Errors });
+});
 
-// GET /api/orders/user/{userId} - Get user's orders
 ordersGroup.MapGet("/user/{userId:guid}", async (Guid userId, ISender sender) =>
-    {
-        var query = new GetUserOrders.Query { UserId = userId };
-        var result = await sender.Send(query);
-    
-        return result.IsSuccess
-            ? Results.Ok(result.Value)
-            : Results.BadRequest(new { errors = result.Errors });
-    })
-    .WithName("GetUserOrders")
-    .Produces<List<OrderDto>>(StatusCodes.Status200OK)
-    .Produces<object>(StatusCodes.Status400BadRequest);
+{
+    var result = await sender.Send(new GetUserOrders.Query { UserId = userId });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+});
 
-// GET /api/orders/{orderId} - Get order by ID
 ordersGroup.MapGet("/{orderId:guid}", async (Guid orderId, Guid userId, ISender sender) =>
-    {
-        // userId from query parameter: /api/orders/{orderId}?userId={userId}
-        var query = new GetOrderById.Query { OrderId = orderId, UserId = userId };
-        var result = await sender.Send(query);
-    
-        return result.IsSuccess
-            ? Results.Ok(result.Value)
-            : Results.NotFound(new { errors = result.Errors });
-    })
-    .WithName("GetOrderById")
-    .Produces<OrderDto>(StatusCodes.Status200OK)
-    .Produces<object>(StatusCodes.Status404NotFound);
+{
+    var result = await sender.Send(new GetOrderById.Query { OrderId = orderId, UserId = userId });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.NotFound(new { errors = result.Errors });
+});
 
-// DELETE /api/orders/{orderId} - Cancel order (soft delete)
 ordersGroup.MapDelete("/{orderId:guid}", async (Guid orderId, Guid userId, string? cancellationReason, ISender sender) =>
+{
+    var result = await sender.Send(new CancelOrder.Command
     {
-        // userId from query parameter: /api/orders/{orderId}?userId={userId}&cancellationReason={reason}
-        var command = new CancelOrder.Command 
-        { 
-            OrderId = orderId, 
-            UserId = userId,
-            CancellationReason = cancellationReason
-        };
-    
-        var result = await sender.Send(command);
-    
-        return result.IsSuccess
-            ? Results.Ok(result.Value)
-            : Results.BadRequest(new { errors = result.Errors });
-    })
-    .WithName("CancelOrder")
-    .Produces<OrderDto>(StatusCodes.Status200OK)
-    .Produces<object>(StatusCodes.Status400BadRequest);
+        OrderId = orderId,
+        UserId = userId,
+        CancellationReason = cancellationReason
+    });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+});
 
-
-// KITCHEN ENDPOINTS
+// ========== KITCHEN ENDPOINTS ==========
 var kitchenGroup = app.MapGroup("api/kitchen").WithTags("Kitchen");
 
-// GET /api/kitchen/pending - Get pending orders for kitchen
 kitchenGroup.MapGet("/pending", async (ISender sender) =>
-    {
-        var query = new GetPendingOrders.Query();
-        var result = await sender.Send(query);
-    
-        return result.IsSuccess
-            ? Results.Ok(result.Value)
-            : Results.BadRequest(new { errors = result.Errors });
-    })
-    .WithName("GetPendingOrders")
-    .Produces<List<OrderDto>>(StatusCodes.Status200OK)
-    .Produces<object>(StatusCodes.Status400BadRequest);
+{
+    var result = await sender.Send(new GetPendingOrders.Query());
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+});
 
-// PATCH /api/kitchen/orders/{orderId}/status - Update order status
 kitchenGroup.MapPatch("/orders/{orderId:guid}/status", async (Guid orderId, UpdateOrderStatus.Command command, ISender sender) =>
-    {
-        // Override orderId from route
-        var updatedCommand = command with { OrderId = orderId };
-        var result = await sender.Send(updatedCommand);
-    
-        return result.IsSuccess
-            ? Results.Ok(result.Value)
-            : Results.BadRequest(new { errors = result.Errors });
-    })
-    .WithName("UpdateOrderStatus")
-    .Produces<OrderDto>(StatusCodes.Status200OK)
-    .Produces<object>(StatusCodes.Status400BadRequest);
+{
+    var updatedCommand = command with { OrderId = orderId };
+    var result = await sender.Send(updatedCommand);
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+});
 
-// GET /api/kitchen/inventory/daily - Get daily inventory report
 kitchenGroup.MapGet("/inventory/daily", async (DateTime? reportDate, ISender sender) =>
-    {
-        var query = new GetDailyInventoryReport.Query { ReportDate = reportDate };
-        var result = await sender.Send(query);
-    
-        return result.IsSuccess
-            ? Results.Ok(result.Value)
-            : Results.BadRequest(new { errors = result.Errors });
-    })
-    .WithName("GetDailyInventoryReport")
-    .Produces<InventoryReportDto>(StatusCodes.Status200OK)
-    .Produces<object>(StatusCodes.Status400BadRequest);
+{
+    var result = await sender.Send(new GetDailyInventoryReport.Query { ReportDate = reportDate });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+});
 
 app.Run();

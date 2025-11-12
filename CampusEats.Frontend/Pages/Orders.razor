@@ -1,0 +1,49 @@
+@page "/orders"
+@inject ApiClient Api
+
+<h3 class="mb-3">My Orders</h3>
+
+<div class="input-group mb-3">
+  <input class="form-control" placeholder="UserId (GUID)" @bind="_userIdText" />
+  <button class="btn btn-danger" @onclick="Load">Load</button>
+</div>
+
+@if (_loading) { <p>Loading…</p> }
+else if (_error is not null) { <div class="alert alert-danger">@_error</div> }
+else if (!_orders.Any()) { <div class="alert alert-info">No orders.</div> }
+else
+{
+    <div class="list-group">
+      @foreach (var o in _orders)
+      {
+          <a class="list-group-item list-group-item-action" href="order/@o.Id">
+              <div class="d-flex justify-content-between">
+                <strong>@o.OrderNumber</strong>
+                <span class="badge bg-secondary">@o.Status</span>
+              </div>
+              <div class="small text-muted">@o.CreatedAt:g • @o.TotalAmount.ToString("0.00") RON</div>
+          </a>
+      }
+    </div>
+}
+
+@code {
+    string _userIdText = "";
+    bool _loading;
+    string? _error;
+    List<OrderDto> _orders = new();
+
+    async Task Load()
+    {
+        _error = null;
+        if (!Guid.TryParse(_userIdText, out var userId))
+        {
+            _error = "Invalid UserId";
+            return;
+        }
+        _loading = true;
+        try { _orders = await Api.GetUserOrdersAsync(userId) ?? new(); }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+}

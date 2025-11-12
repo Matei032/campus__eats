@@ -1,0 +1,111 @@
+@page "/cart"
+@inject CampusEats.Frontend.Services.CartService CartSvc
+@inject CampusEats.Frontend.Services.ApiClient Api
+
+<h3 class="mb-3">Your Cart</h3>
+
+@if (!CartSvc.Items.Any())
+{
+    <div class="alert alert-info">
+        Cart is empty. Go to <a href="menu">Menu</a>.
+    </div>
+}
+else
+{
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th style="width:140px">Qty</th>
+          <th class="text-end" style="width:140px">Price</th>
+          <th class="text-end" style="width:140px">Subtotal</th>
+          <th style="width:80px"></th>
+        </tr>
+      </thead>
+      <tbody>
+      @foreach (var i in CartSvc.Items)
+      {
+          <tr>
+            <td>@i.Name</td>
+            <td>
+                <input type="number" class="form-control" min="0" value="@i.Quantity"
+                       @onchange="(e) => OnQuantityChanged(i, e)" />
+
+            </td>
+            <td class="text-end">@i.UnitPrice.ToString("0.00") RON</td>
+            <td class="text-end">@i.Subtotal.ToString("0.00") RON</td>
+            <td class="text-end">
+              <button class="btn btn-outline-danger btn-sm" @onclick="() => CartSvc.Remove(i.ProductId)">X</button>
+            </td>
+          </tr>
+      }
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="3" class="text-end">Total:</th>
+          <th class="text-end">@CartSvc.Total.ToString("0.00") RON</th>
+          <th></th>
+        </tr>
+      </tfoot>
+    </table>
+
+    <EditForm Model="@_checkout" OnValidSubmit="Checkout">
+        <div class="row g-2">
+            <div class="col-sm-4">
+                <InputText @bind-Value="_checkout.UserIdText" class="form-control" placeholder="UserId (GUID)" />
+            </div>
+            <div class="col-sm-3">
+                <InputText @bind-Value="_checkout.PaymentMethod" class="form-control" placeholder="Payment method" />
+            </div>
+            <div class="col-sm-5">
+                <InputText @bind-Value="_checkout.Notes" class="form-control" placeholder="Notes (optional)" />
+            </div>
+        </div>
+        <button class="btn btn-danger mt-3" type="submit">Place Order</button>
+    </EditForm>
+
+    @if (_message is not null)
+    {
+        <div class="alert alert-success mt-3">@_message</div>
+    }
+}
+
+@code {
+    string? _message;
+    CheckoutVm _checkout = new();
+
+    void Update(Guid id, int qty) => CartSvc.UpdateQty(id, qty);
+
+    async Task Checkout()
+    {
+        if (!Guid.TryParse(_checkout.UserIdText, out var userId))
+        {
+            _message = "Invalid UserId";
+            return;
+        }
+
+        var items = CartSvc.Items
+            .Select(i => new OrderItemRequest(i.ProductId, i.Quantity, null))
+            .ToList();
+
+        var cmd = new CreateOrderCommand(userId, _checkout.PaymentMethod, _checkout.Notes, items);
+
+        var order = await Api.CreateOrderAsync(cmd);
+        _message = order is null ? "Order failed." : $"Order placed! No: {order.OrderNumber}";
+        if (order is not null) CartSvc.Clear();
+        StateHasChanged();
+    }
+
+    class CheckoutVm
+    {
+        public string? UserIdText { get; set; }
+        public string? PaymentMethod { get; set; }
+        public string? Notes { get; set; }
+    }
+    void OnQuantityChanged(CartItem i, ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var qty))
+            CartSvc.UpdateQty(i.ProductId, qty);
+    }
+
+}

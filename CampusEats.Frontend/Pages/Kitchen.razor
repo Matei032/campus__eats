@@ -1,0 +1,60 @@
+@page "/kitchen"
+@inject ApiClient Api
+
+<h3 class="mb-3">Kitchen – Pending Orders</h3>
+
+@if (_loading) { <p>Loading…</p> }
+else if (_error is not null) { <div class="alert alert-danger">@_error</div> }
+else if (!_orders.Any()) { <div class="alert alert-info">No pending orders.</div> }
+else
+{
+  @foreach (var o in _orders)
+  {
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <strong>#@o.OrderNumber</strong>
+            <div class="small text-muted">@o.CreatedAt:g</div>
+          </div>
+          <span class="badge bg-warning text-dark">@o.Status</span>
+        </div>
+
+        <ul class="list-group list-group-flush my-2">
+          @foreach (var it in o.OrderItems)
+          {
+              <li class="list-group-item d-flex justify-content-between">
+                <span>@it.ProductName × @it.Quantity</span>
+                <span>@it.Subtotal.ToString("0.00")</span>
+              </li>
+          }
+        </ul>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-primary btn-sm" @onclick="@( () => SetStatus(o.Id, "Preparing") )">Preparing</button>
+          <button class="btn btn-outline-success btn-sm" @onclick="@( () => SetStatus(o.Id, "Ready") )">Ready</button>
+          <button class="btn btn-outline-secondary btn-sm" @onclick="@( () => SetStatus(o.Id, "Completed") )">Completed</button>
+        </div>
+      </div>
+    </div>
+  }
+}
+
+@code {
+    bool _loading = true;
+    string? _error;
+    List<OrderDto> _orders = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _orders = await Api.GetPendingOrdersAsync() ?? new(); }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    async Task SetStatus(Guid orderId, string status)
+    {
+        await Api.UpdateOrderStatusAsync(new UpdateOrderStatusCommand(orderId, status, null));
+        _orders = await Api.GetPendingOrdersAsync() ?? new();
+        StateHasChanged();
+    }
+}

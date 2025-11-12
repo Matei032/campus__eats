@@ -1,0 +1,57 @@
+@page "/products-admin"
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<h3 class="mb-3">Products (Admin)</h3>
+
+<div class="d-flex justify-content-between mb-3">
+  <div></div>
+  <button class="btn btn-danger" @onclick="NewProduct">+ New Product</button>
+</div>
+
+@if (_loading) { <p>Loading…</p> }
+else if (_error is not null) { <div class="alert alert-danger">@_error</div> }
+else if (!_products.Any()) { <div class="alert alert-info">No products.</div> }
+else
+{
+  <table class="table table-striped">
+    <thead><tr><th>Name</th><th>Category</th><th class="text-end">Price</th><th></th></tr></thead>
+    <tbody>
+      @foreach (var p in _products)
+      {
+        <tr>
+          <td>@p.Name</td>
+          <td>@p.Category</td>
+          <td class="text-end">@p.Price.ToString("0.00")</td>
+          <td class="text-end">
+            <button class="btn btn-outline-primary btn-sm me-2" @onclick="() => Edit(p.Id)">Edit</button>
+            <button class="btn btn-outline-danger btn-sm" @onclick="() => Delete(p.Id)">Delete</button>
+          </td>
+        </tr>
+      }
+    </tbody>
+  </table>
+}
+
+@code {
+    bool _loading = true;
+    string? _error;
+    List<ProductDto> _products = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _products = await Api.GetMenuAsync() ?? new(); }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    void NewProduct() => Nav.NavigateTo("/edit-product");
+    void Edit(Guid id) => Nav.NavigateTo($"/edit-product/{id}");
+
+    async Task Delete(Guid id)
+    {
+        await Api.DeleteProductAsync(id);
+        _products = await Api.GetMenuAsync() ?? new();
+        StateHasChanged();
+    }
+}

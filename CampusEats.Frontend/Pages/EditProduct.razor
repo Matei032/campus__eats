@@ -1,0 +1,132 @@
+@page "/edit-product"
+@page "/edit-product/{Id:guid}"
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<h3 class="mb-3">@(_isNew ? "New Product" : "Edit Product")</h3>
+
+@if (_loading) { <p>Loading…</p> }
+else
+{
+    <EditForm Model="@_vm" OnValidSubmit="Save">
+      <div class="row g-3">
+        <div class="col-sm-6">
+          <label class="form-label">Name</label>
+          <InputText class="form-control" @bind-Value="_vm.Name" />
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label">Category</label>
+          <InputText class="form-control" @bind-Value="_vm.Category" />
+        </div>
+        <div class="col-12">
+          <label class="form-label">Description</label>
+          <InputText class="form-control" @bind-Value="_vm.Description" />
+        </div>
+        <div class="col-sm-4">
+          <label class="form-label">Price</label>
+          <InputNumber class="form-control" @bind-Value="_vm.Price" />
+        </div>
+        <div class="col-sm-8">
+          <label class="form-label">Image URL</label>
+          <InputText class="form-control" @bind-Value="_vm.ImageUrl" />
+        </div>
+        <div class="col-12">
+          <label class="form-label">Allergens (comma separated)</label>
+          <InputText class="form-control" @bind-Value="_vm.AllergensCsv" />
+        </div>
+        <div class="col-sm-6">
+          <label class="form-label">Dietary</label>
+          <InputText class="form-control" @bind-Value="_vm.DietaryRestrictions" />
+        </div>
+        <div class="col-sm-6 form-check mt-4">
+          <InputCheckbox class="form-check-input" @bind-Value="_vm.IsAvailable" />
+          <label class="form-check-label ms-2">Available</label>
+        </div>
+      </div>
+      <div class="mt-3 d-flex gap-2">
+        <button class="btn btn-danger" type="submit">Save</button>
+        <a class="btn btn-outline-secondary" href="/products-admin">Cancel</a>
+      </div>
+    </EditForm>
+
+    @if (_msg is not null)
+    {
+        <div class="alert alert-info mt-3">@_msg</div>
+    }
+}
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    bool _isNew => Id is null;
+    bool _loading = true;
+    string? _msg;
+    ProductVm _vm = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id is not null)
+        {
+            var p = await Api.GetProductAsync(Id.Value);
+            if (p is not null)
+            {
+                _vm = new ProductVm
+                {
+                    Id = p.Id,
+                    Name = p.Name,
+                    Description = p.Description,
+                    Price = p.Price,
+                    Category = p.Category,
+                    ImageUrl = p.ImageUrl,
+                    AllergensCsv = string.Join(", ", p.Allergens ?? new()),
+                    DietaryRestrictions = p.DietaryRestrictions,
+                    IsAvailable = p.IsAvailable
+                };
+            }
+        }
+        _loading = false;
+    }
+
+    async Task Save()
+    {
+        try
+        {
+            if (_isNew)
+            {
+                var cmd = new CreateProductCommand(
+                    _vm.Name, _vm.Description, _vm.Price, _vm.Category,
+                    _vm.ImageUrl, _vm.Allergens, _vm.DietaryRestrictions, _vm.IsAvailable
+                );
+                await Api.CreateProductAsync(cmd);
+            }
+            else
+            {
+                var cmd = new UpdateProductCommand(
+                    _vm.Id!.Value, _vm.Name, _vm.Description, _vm.Price, _vm.Category,
+                    _vm.ImageUrl, _vm.Allergens, _vm.DietaryRestrictions, _vm.IsAvailable
+                );
+                await Api.UpdateProductAsync(_vm.Id.Value, cmd);
+            }
+            Nav.NavigateTo("/products-admin");
+        }
+        catch (Exception ex)
+        {
+            _msg = ex.Message;
+        }
+    }
+
+    class ProductVm
+    {
+        public Guid? Id { get; set; }
+        public string Name { get; set; } = "";
+        public string Description { get; set; } = "";
+        public decimal Price { get; set; }
+        public string Category { get; set; } = "";
+        public string? ImageUrl { get; set; }
+        public string AllergensCsv { get; set; } = "";
+        public string? DietaryRestrictions { get; set; }
+        public bool IsAvailable { get; set; } = true;
+
+        public List<string> Allergens =>
+            AllergensCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+    }
+}
