@@ -1,0 +1,51 @@
+﻿@using CampusEats.Frontend.State
+@using CampusEats.Frontend.Features.Auth
+@inject AuthService AuthService
+@inject AuthState AuthState
+@inject NavigationManager Nav
+
+@if (!AuthState.IsAuthenticated)
+{
+    <li class="nav-item px-2">
+        <NavLink class="btn btn-sm btn-outline-light" href="/login">Sign in</NavLink>
+    </li>
+    <li class="nav-item px-2">
+        <NavLink class="btn btn-sm btn-light text-danger" href="/register">Register</NavLink>
+    </li>
+}
+else
+{
+    <li class="nav-item px-2 d-flex align-items-center">
+        <span class="navbar-text text-white-50">
+            Signed in as <strong>@(string.IsNullOrWhiteSpace(AuthState.Username) ? "user" : AuthState.Username)</strong>
+        </span>
+    </li>
+    <li class="nav-item px-2">
+        <button class="btn btn-sm btn-outline-light" @onclick="DoLogout">Logout</button>
+    </li>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        AuthService.AuthStateChanged += OnAuthChanged;
+        AuthState.Changed += OnAuthChanged;
+    }
+
+    private void OnAuthChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task DoLogout()
+    {
+        await AuthService.LogoutAsync();
+        Nav.NavigateTo("/", forceLoad: true);
+    }
+
+    public void Dispose()
+    {
+        AuthService.AuthStateChanged -= OnAuthChanged;
+        AuthState.Changed -= OnAuthChanged;
+    }
+}

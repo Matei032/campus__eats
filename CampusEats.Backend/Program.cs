@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using System.Text;
 using CampusEats.Backend.Common.Behaviors;
 using CampusEats.Backend.Common.DTOs;
@@ -53,7 +53,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidAudience = builder.Configuration["Jwt:Audience"],
             ValidateLifetime = true,
-            ClockSkew = TimeSpan.Zero
+            ClockSkew = TimeSpan.Zero,
+
+            // ca să mapeze corect rolurile din token (indiferent dacă e "role" sau ClaimTypes.Role)
+            RoleClaimType = ClaimTypes.Role,
+            NameClaimType = ClaimTypes.NameIdentifier
         };
     });
 
@@ -65,7 +69,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
     options.CustomSchemaIds(type => type.FullName?.Replace("+", "."));
-    
+
     // JWT authentication in Swagger
     options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
@@ -76,7 +80,7 @@ builder.Services.AddSwaggerGen(options =>
         In = Microsoft.OpenApi.Models.ParameterLocation.Header,
         Description = "JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token."
     });
-    
+
     options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
     {
         {
@@ -128,6 +132,46 @@ else
 
 // ========== AUTHENTICATION & AUTHORIZATION MIDDLEWARE ==========
 app.UseAuthentication();
+
+// DEV AUTH BYPASS — DOAR ÎN DEVELOPMENT
+// Dacă nu ești autentificat și ești pe /api/*, te “îmbracă” automat ca Admin/Staff din DB.
+if (app.Environment.IsDevelopment())
+{
+    app.Use(async (ctx, next) =>
+    {
+        // aplicăm doar pe rutele API
+        if (ctx.Request.Path.StartsWithSegments("/api") &&
+            !(ctx.User?.Identity?.IsAuthenticated ?? false))
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            // Caută un Admin/Staff; fallback la orice user (dacă nu există Admin/Staff)
+            var devUser = await db.Users
+                .OrderByDescending(u => u.CreatedAt)
+                .FirstOrDefaultAsync(u => u.Role == "Admin" || u.Role == "Staff")
+                ?? await db.Users.OrderByDescending(u => u.CreatedAt).FirstOrDefaultAsync();
+
+            if (devUser != null)
+            {
+                var claims = new List<Claim>
+                {
+                    new(ClaimTypes.NameIdentifier, devUser.Id.ToString()),
+                    new("sub", devUser.Id.ToString()),
+                    new(ClaimTypes.Email, devUser.Email),
+                    new(ClaimTypes.Name, string.IsNullOrWhiteSpace(devUser.FullName) ? devUser.Email : devUser.FullName),
+                    new(ClaimTypes.Role, string.IsNullOrWhiteSpace(devUser.Role) ? "Admin" : devUser.Role),
+                    new("role", string.IsNullOrWhiteSpace(devUser.Role) ? "Admin" : devUser.Role)
+                };
+
+                ctx.User = new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "DevBypass"));
+            }
+        }
+
+        await next();
+    });
+}
+
 app.UseAuthorization();
 
 // ========== DATABASE SEEDING ==========
@@ -169,9 +213,9 @@ authGroup.MapPost("/login", async (Login.Query query, ISender sender) =>
 
 authGroup.MapGet("/me", async (ClaimsPrincipal user, ISender sender) =>
 {
-    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value
                    ?? user.FindFirst("sub")?.Value;
-    
+
     if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
     {
         return Results.Unauthorized();
@@ -196,8 +240,8 @@ var menuGroup = app.MapGroup("api/menu").WithTags("Menu");
 menuGroup.MapGet("/", async (ISender sender) =>
 {
     var result = await sender.Send(new GetMenu.Query());
-    return result.IsSuccess 
-        ? Results.Ok(result.Value) 
+    return result.IsSuccess
+        ? Results.Ok(result.Value)
         : Results.BadRequest(new { error = result.Error });
 })
 .WithName("GetMenu")
@@ -207,8 +251,8 @@ menuGroup.MapGet("/", async (ISender sender) =>
 menuGroup.MapGet("/{id:guid}", async (Guid id, ISender sender) =>
 {
     var result = await sender.Send(new GetProductById.Query(id));
-    return result.IsSuccess 
-        ? Results.Ok(result.Value) 
+    return result.IsSuccess
+        ? Results.Ok(result.Value)
         : Results.NotFound(new { error = result.Error });
 })
 .WithName("GetProductById")
@@ -246,8 +290,8 @@ menuGroup.MapPut("/{id:guid}", async (Guid id, UpdateProduct.Command command, IS
 menuGroup.MapDelete("/{id:guid}", async (Guid id, ISender sender) =>
 {
     var result = await sender.Send(new DeleteProduct.Command(id));
-    return result.IsSuccess 
-        ? Results.NoContent() 
+    return result.IsSuccess
+        ? Results.NoContent()
         : Results.BadRequest(new { error = result.Error });
 })
 .WithName("DeleteProduct")
@@ -261,9 +305,9 @@ var ordersGroup = app.MapGroup("api/orders").WithTags("Orders");
 
 ordersGroup.MapPost("/", async (CreateOrder.Command command, ClaimsPrincipal user, ISender sender) =>
 {
-    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value
                    ?? user.FindFirst("sub")?.Value;
-    
+
     if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var authenticatedUserId))
     {
         return Results.Unauthorized();
@@ -289,9 +333,9 @@ ordersGroup.MapPost("/", async (CreateOrder.Command command, ClaimsPrincipal use
 
 ordersGroup.MapGet("/user/{userId:guid}", async (Guid userId, ClaimsPrincipal user, ISender sender) =>
 {
-    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value
                    ?? user.FindFirst("sub")?.Value;
-    
+
     if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var authenticatedUserId))
     {
         return Results.Unauthorized();
@@ -305,8 +349,8 @@ ordersGroup.MapGet("/user/{userId:guid}", async (Guid userId, ClaimsPrincipal us
     }
 
     var result = await sender.Send(new GetUserOrders.Query { UserId = userId });
-    return result.IsSuccess 
-        ? Results.Ok(result.Value) 
+    return result.IsSuccess
+        ? Results.Ok(result.Value)
         : Results.BadRequest(new { errors = result.Errors });
 })
 .WithName("GetUserOrders")
@@ -318,17 +362,17 @@ ordersGroup.MapGet("/user/{userId:guid}", async (Guid userId, ClaimsPrincipal us
 
 ordersGroup.MapGet("/{orderId:guid}", async (Guid orderId, ClaimsPrincipal user, ISender sender) =>
 {
-    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value
                    ?? user.FindFirst("sub")?.Value;
-    
+
     if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var authenticatedUserId))
     {
         return Results.Unauthorized();
     }
 
     var result = await sender.Send(new GetOrderById.Query { OrderId = orderId, UserId = authenticatedUserId });
-    return result.IsSuccess 
-        ? Results.Ok(result.Value) 
+    return result.IsSuccess
+        ? Results.Ok(result.Value)
         : Results.NotFound(new { errors = result.Errors });
 })
 .WithName("GetOrderById")
@@ -339,9 +383,9 @@ ordersGroup.MapGet("/{orderId:guid}", async (Guid orderId, ClaimsPrincipal user,
 
 ordersGroup.MapDelete("/{orderId:guid}", async (Guid orderId, string? cancellationReason, ClaimsPrincipal user, ISender sender) =>
 {
-    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value
                    ?? user.FindFirst("sub")?.Value;
-    
+
     if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var authenticatedUserId))
     {
         return Results.Unauthorized();
@@ -353,8 +397,8 @@ ordersGroup.MapDelete("/{orderId:guid}", async (Guid orderId, string? cancellati
         UserId = authenticatedUserId,
         CancellationReason = cancellationReason
     });
-    return result.IsSuccess 
-        ? Results.Ok(result.Value) 
+    return result.IsSuccess
+        ? Results.Ok(result.Value)
         : Results.BadRequest(new { errors = result.Errors });
 })
 .WithName("CancelOrder")
@@ -371,8 +415,8 @@ var kitchenGroup = app.MapGroup("api/kitchen").WithTags("Kitchen");
 kitchenGroup.MapGet("/pending", async (ISender sender) =>
 {
     var result = await sender.Send(new GetPendingOrders.Query());
-    return result.IsSuccess 
-        ? Results.Ok(result.Value) 
+    return result.IsSuccess
+        ? Results.Ok(result.Value)
         : Results.BadRequest(new { errors = result.Errors });
 })
 .WithName("GetPendingOrders")
@@ -386,8 +430,8 @@ kitchenGroup.MapPatch("/orders/{orderId:guid}/status", async (Guid orderId, Upda
 {
     var updatedCommand = command with { OrderId = orderId };
     var result = await sender.Send(updatedCommand);
-    return result.IsSuccess 
-        ? Results.Ok(result.Value) 
+    return result.IsSuccess
+        ? Results.Ok(result.Value)
         : Results.BadRequest(new { errors = result.Errors });
 })
 .WithName("UpdateOrderStatus")
@@ -400,8 +444,8 @@ kitchenGroup.MapPatch("/orders/{orderId:guid}/status", async (Guid orderId, Upda
 kitchenGroup.MapGet("/inventory/daily", async (DateTime? reportDate, ISender sender) =>
 {
     var result = await sender.Send(new GetDailyInventoryReport.Query { ReportDate = reportDate });
-    return result.IsSuccess 
-        ? Results.Ok(result.Value) 
+    return result.IsSuccess
+        ? Results.Ok(result.Value)
         : Results.BadRequest(new { errors = result.Errors });
 })
 .WithName("GetDailyInventoryReport")

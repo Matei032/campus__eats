@@ -1,4 +1,4 @@
-html, body {
+﻿html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
@@ -8,6 +8,24 @@ h1:focus {
 
 a, .btn-link {
     color: #0071c1;
+}
+
+.navbar.sticky-top {
+    z-index: 1030;
+}
+
+/* Elimină spațiile/layout-ul vechi cu sidebar, dacă mai există în CSS-ul template-ului */
+.page {
+    display: block;
+}
+
+.sidebar {
+    display: none;
+}
+
+/* Optional: limitează lățimea conținutului */
+.content {
+    max-width: 1200px;
 }
 
 .btn-primary {

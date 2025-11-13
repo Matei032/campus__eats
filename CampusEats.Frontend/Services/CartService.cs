@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using CampusEats.Frontend.Models;
 
 namespace CampusEats.Frontend.Services;
 

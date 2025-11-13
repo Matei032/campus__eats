@@ -1,0 +1,14 @@
+﻿@page "/auth-debug"
+@using CampusEats.Frontend.State
+@inject AuthState Auth
+
+<h3>Auth Debug</h3>
+<ul>
+    <li>IsAuthenticated: <strong>@Auth.IsAuthenticated</strong></li>
+    <li>Username: <strong>@Auth.Username</strong></li>
+    <li>Roles: <strong>@string.Join(", ", Auth.Roles)</strong></li>
+    <li>Token prefix: <code>@(string.IsNullOrWhiteSpace(Auth.Token) ? "(none)" : Auth.Token.Substring(0, Math.Min(32, Auth.Token.Length)))</code></li>
+</ul>
+<p>
+    Dacă Token prefix = (none), login-ul nu a salvat tokenul în localStorage sau InitializeAsync nu l-a găsit.
+</p>

@@ -1,0 +1,70 @@
+@page "/login"
+@inject CampusEats.Frontend.Features.Auth.AuthService AuthService
+@inject NavigationManager Nav
+
+<h3 class="mb-4">Login</h3>
+
+@if (errors.Count > 0)
+{
+    <div class="alert alert-danger">
+        <ul class="mb-0">
+            @foreach (var e in errors)
+            {
+                <li>@e</li>
+            }
+        </ul>
+    </div>
+}
+
+<EditForm Model="model" OnValidSubmit="HandleLogin">
+    <DataAnnotationsValidator />
+    <div class="mb-3">
+        <label class="form-label">Email</label>
+        <InputText class="form-control" @bind-Value="model.Email" />
+        <ValidationMessage For="@(()=>model.Email)" />
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Parola</label>
+        <InputText class="form-control" type="password" @bind-Value="model.Password" />
+        <ValidationMessage For="@(()=>model.Password)" />
+    </div>
+    <button class="btn btn-primary" disabled="@loading">
+        @(loading ? "Autentificare..." : "Login")
+    </button>
+    <span class="ms-3">
+        <a href="/register">Nu ai cont? Register</a>
+    </span>
+</EditForm>
+
+@code {
+    private LoginModel model = new();
+    private bool loading;
+    private List<string> errors = new();
+
+    private async Task HandleLogin()
+    {
+        loading = true;
+        errors.Clear();
+        var (ok, errs) = await AuthService.LoginAsync(model.Email, model.Password);
+        loading = false;
+
+        if (!ok)
+        {
+            errors = errs;
+        }
+        else
+        {
+            Nav.NavigateTo("/");
+        }
+    }
+
+    public class LoginModel
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required]
+        public string Password { get; set; } = string.Empty;
+    }
+}

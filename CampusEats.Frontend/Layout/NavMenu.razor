@@ -1,40 +1,56 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">CampusEats.Frontend</a>
-        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
-            <span class="navbar-toggler-icon"></span>
-        </button>
+﻿@using CampusEats.Frontend.State
+@inject AuthState AuthState
+
+<div class="top-row px-4 navbar navbar-dark bg-danger">
+    <a class="navbar-brand" href="/">CampusEats</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+        <span class="navbar-toggler-icon"></span>
+    </button>
+    <div id="navMain" class="collapse navbar-collapse">
+        <ul class="navbar-nav me-auto">
+            <li class="nav-item px-2"><NavLink class="nav-link" href="/">Home</NavLink></li>
+            <li class="nav-item px-2"><NavLink class="nav-link" href="/menu">Menu</NavLink></li>
+            <li class="nav-item px-2"><NavLink class="nav-link" href="/cart">Cart</NavLink></li>
+            <li class="nav-item px-2"><NavLink class="nav-link" href="/orders">My Orders</NavLink></li>
+
+            @if (IsStaffOrAdmin)
+            {
+                <li class="nav-item px-2"><NavLink class="nav-link" href="/kitchen">Kitchen</NavLink></li>
+                <li class="nav-item px-2"><NavLink class="nav-link" href="/inventory">Inventory</NavLink></li>
+            }
+
+            @if (IsAdmin)
+            {
+                <li class="nav-item px-2"><NavLink class="nav-link" href="/products-admin">Admin</NavLink></li>
+            }
+        </ul>
+
+        <ul class="navbar-nav">
+            <AuthBadge />
+        </ul>
     </div>
 </div>
 
-<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
-    </nav>
-</div>
-
 @code {
-    private bool collapseNavMenu = true;
+    private bool IsStaffOrAdmin =>
+        AuthState.Roles.Any(r => string.Equals(r, "Staff", StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(r, "Admin", StringComparison.OrdinalIgnoreCase));
 
-    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+    private bool IsAdmin =>
+        AuthState.Roles.Any(r => string.Equals(r, "Admin", StringComparison.OrdinalIgnoreCase));
 
-    private void ToggleNavMenu()
+    protected override void OnInitialized()
     {
-        collapseNavMenu = !collapseNavMenu;
+        AuthState.Changed += OnChanged;
     }
 
+    private void OnChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        AuthState.Changed -= OnChanged;
+    }
 }
