@@ -1,0 +1,10 @@
+[33m4fbcf23[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mweek3-matei[m[33m)[m Implement payments module with Card (Stripe), Cash, LoyaltyPoints support; add validation, Stripe integration, refund API, failure reason logging, paginated/filterable history endpoints, and comprehensive unit tests. Secure endpoints with role-based authorization.
+[33m9e08c4f[m[33m ([m[1;31morigin/week3-matei[m[33m)[m login register separated pages by token
+[33m99af3af[m[33m ([m[1;31morigin/week4-razvan[m[33m, [m[1;32mweek4-razvan[m[33m)[m Auth Service
+[33me7157e4[m aliniare API, CORS, APIClient
+[33mb4a7991[m[33m ([m[1;31morigin/week3-andreea[m[33m)[m adaugat frontend
+[33m5066e11[m[33m ([m[1;31morigin/week3-rares[m[33m)[m finalizare modul kitchen
+[33m6b9ffd9[m[33m ([m[1;31morigin/week3-razvan[m[33m, [m[1;32mweek3-razvan[m[33m)[m Week 3 Complete: Orders & Kitchen Management System
+[33ma1e3cca[m[33m ([m[1;31morigin/week2-razvan[m[33m, [m[1;32mweek2-razvan[m[33m, [m[1;32mweek1[m[33m)[m Week 2 Complete: Menu CRUD
+[33mdde0b61[m[33m ([m[1;31morigin/week1[m[33m, [m[1;32mmain[m[33m)[m Week 1 Complete: Database architecture and initial migration
+[33mbb01f61[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Initial project setup with Docker and EF Core

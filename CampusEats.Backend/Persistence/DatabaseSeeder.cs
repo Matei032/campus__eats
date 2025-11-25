@@ -344,6 +344,80 @@ public static class DatabaseSeeder
             // Order 6 (Ready) - Caesar Salad only
             new() { Id = Guid.NewGuid(), OrderId = orders[5].Id, ProductId = existingProducts[2].Id, Quantity = 1, UnitPrice = 22.00m, Subtotal = 22.00m, SpecialInstructions = "Dressing separat" }
         };
+        
+        var payments = new List<Payment>
+    {
+        new()
+        {
+            Id = Guid.NewGuid(),
+            OrderId = orders[0].Id,
+            Amount = orders[0].TotalAmount,
+            Status = PaymentStatus.Completed,
+            Method = PaymentMethod.Card,
+            StripePaymentIntentId = "simulated_101",
+            CreatedAt = orders[0].CreatedAt,
+            PaidAt = orders[0].CreatedAt.AddMinutes(2),
+            LoyaltyPointsUsed = null
+        },
+        new()
+        {
+            Id = Guid.NewGuid(),
+            OrderId = orders[1].Id,
+            Amount = orders[1].TotalAmount,
+            Status = PaymentStatus.Completed,
+            Method = PaymentMethod.Cash,
+            CreatedAt = orders[1].CreatedAt,
+            PaidAt = orders[1].CreatedAt.AddMinutes(1),
+            LoyaltyPointsUsed = null
+        },
+        new()
+        {
+            Id = Guid.NewGuid(),
+            OrderId = orders[2].Id,
+            Amount = orders[2].TotalAmount,
+            Status = PaymentStatus.Completed,
+            Method = PaymentMethod.Card,
+            StripePaymentIntentId = "simulated_102",
+            CreatedAt = orders[2].CreatedAt,
+            PaidAt = orders[2].CreatedAt.AddMinutes(3),
+            LoyaltyPointsUsed = null
+        },
+        new()
+        {
+            Id = Guid.NewGuid(),
+            OrderId = orders[3].Id,
+            Amount = orders[3].TotalAmount,
+            Status = PaymentStatus.Completed,
+            Method = PaymentMethod.Card,
+            StripePaymentIntentId = "simulated_103",
+            CreatedAt = orders[3].CreatedAt,
+            PaidAt = orders[3].CreatedAt.AddMinutes(4),
+            LoyaltyPointsUsed = null
+        },
+        new()
+        {
+            Id = Guid.NewGuid(),
+            OrderId = orders[4].Id,
+            Amount = orders[4].TotalAmount,
+            Status = PaymentStatus.Completed,
+            Method = PaymentMethod.Cash,
+            CreatedAt = orders[4].CreatedAt,
+            PaidAt = orders[4].CreatedAt.AddMinutes(1),
+            LoyaltyPointsUsed = null
+        },
+        new()
+        {
+            Id = Guid.NewGuid(),
+            OrderId = orders[5].Id,
+            Amount = orders[5].TotalAmount,
+            Status = PaymentStatus.Completed,
+            Method = PaymentMethod.Card,
+            StripePaymentIntentId = "simulated_104",
+            CreatedAt = orders[5].CreatedAt,
+            PaidAt = orders[5].CreatedAt.AddMinutes(2),
+            LoyaltyPointsUsed = null
+        }
+    };
 
         await context.OrderItems.AddRangeAsync(orderItems);
         await context.SaveChangesAsync();

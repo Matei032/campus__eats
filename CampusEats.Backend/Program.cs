@@ -1,12 +1,15 @@
 ﻿using System.Security.Claims;
 using System.Text;
+using CampusEats.Backend.Common;
 using CampusEats.Backend.Common.Behaviors;
+using CampusEats.Backend.Common.Config;
 using CampusEats.Backend.Common.DTOs;
 using CampusEats.Backend.Common.Services;
 using CampusEats.Backend.Features.Authentication;
 using CampusEats.Backend.Features.Kitchen;
 using CampusEats.Backend.Features.Menu;
 using CampusEats.Backend.Features.Orders;
+using CampusEats.Backend.Features.Payments;
 using CampusEats.Backend.Persistence;
 using FluentValidation;
 using MediatR;
@@ -14,32 +17,38 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
+using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ========== DATABASE CONFIG ==========
+// DATABASE CONFIG
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
 dataSourceBuilder.EnableDynamicJson();
 var dataSource = dataSourceBuilder.Build();
+builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(dataSource));
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(dataSource));
+// STRIPE CONFIG
+builder.Services.Configure<StripeSettings>(builder.Configuration.GetSection("Stripe"));
 
-// ========== MEDIATR + VALIDATION ==========
+builder.Services.AddSingleton<Stripe.StripeClient>(provider =>
+{
+    var stripeSettings = builder.Configuration.GetSection("Stripe").Get<StripeSettings>();
+    return new Stripe.StripeClient(stripeSettings!.SecretKey);
+});
+
+// MEDIATR + VALIDATION
 builder.Services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
     cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
 });
-
 builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 
-// ========== JWT SERVICE ==========
+// JWT SERVICE
 builder.Services.AddScoped<IJwtService, JwtService>();
 
-// ========== AUTHENTICATION ==========
+// AUTHENTICATION
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -54,72 +63,55 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = builder.Configuration["Jwt:Audience"],
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero,
-
-            // ca să mapeze corect rolurile din token (indiferent dacă e "role" sau ClaimTypes.Role)
             RoleClaimType = ClaimTypes.Role,
             NameClaimType = ClaimTypes.NameIdentifier
         };
     });
 
-// ========== AUTHORIZATION ==========
+// AUTHORIZATION
 builder.Services.AddAuthorization();
 
-// ========== SWAGGER ==========
+// SWAGGER
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
     options.CustomSchemaIds(type => type.FullName?.Replace("+", "."));
-
-    // JWT authentication in Swagger
     options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
-        Name = "Authorization",
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
-        Scheme = "Bearer",
-        BearerFormat = "JWT",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Name = "Authorization", Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "Bearer", BearerFormat = "JWT", In = Microsoft.OpenApi.Models.ParameterLocation.Header,
         Description = "JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token."
     });
-
     options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
     {
-        {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-            {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
-                {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
+        { new Microsoft.OpenApi.Models.OpenApiSecurityScheme { Reference = new Microsoft.OpenApi.Models.OpenApiReference { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "Bearer" } }, Array.Empty<string>() }
     });
 });
 
-// ========== CORS CONFIG ==========
+// CORS (replace with dynamic for any localhost port if needed)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy
-            .WithOrigins(
-                "http://localhost:5086",
-                "https://localhost:7263",
-                "http://localhost:8000"
-            )
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials();
+        policy.SetIsOriginAllowed(origin =>
+        {
+            if (string.IsNullOrWhiteSpace(origin)) return false;
+            try
+            {
+                var uri = new Uri(origin);
+                return uri.Host == "localhost" || uri.Host == "127.0.0.1";
+            }
+            catch { return false; }
+        })
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials();
     });
 });
 
 var app = builder.Build();
-
-// ========== USE CORS ==========
 app.UseCors("AllowFrontend");
 
-// ========== DEV TOOLS ==========
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -130,28 +122,20 @@ else
     app.UseHttpsRedirection();
 }
 
-// ========== AUTHENTICATION & AUTHORIZATION MIDDLEWARE ==========
 app.UseAuthentication();
 
 // DEV AUTH BYPASS — DOAR ÎN DEVELOPMENT
-// Dacă nu ești autentificat și ești pe /api/*, te “îmbracă” automat ca Admin/Staff din DB.
 if (app.Environment.IsDevelopment())
 {
     app.Use(async (ctx, next) =>
     {
-        // aplicăm doar pe rutele API
-        if (ctx.Request.Path.StartsWithSegments("/api") &&
-            !(ctx.User?.Identity?.IsAuthenticated ?? false))
+        if (ctx.Request.Path.StartsWithSegments("/api")
+            && !(ctx.User?.Identity?.IsAuthenticated ?? false))
         {
             using var scope = app.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-            // Caută un Admin/Staff; fallback la orice user (dacă nu există Admin/Staff)
-            var devUser = await db.Users
-                .OrderByDescending(u => u.CreatedAt)
-                .FirstOrDefaultAsync(u => u.Role == "Admin" || u.Role == "Staff")
+            var devUser = await db.Users.OrderByDescending(u => u.CreatedAt).FirstOrDefaultAsync(u => u.Role == "Admin" || u.Role == "Staff")
                 ?? await db.Users.OrderByDescending(u => u.CreatedAt).FirstOrDefaultAsync();
-
             if (devUser != null)
             {
                 var claims = new List<Claim>
@@ -163,18 +147,15 @@ if (app.Environment.IsDevelopment())
                     new(ClaimTypes.Role, string.IsNullOrWhiteSpace(devUser.Role) ? "Admin" : devUser.Role),
                     new("role", string.IsNullOrWhiteSpace(devUser.Role) ? "Admin" : devUser.Role)
                 };
-
                 ctx.User = new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "DevBypass"));
             }
         }
-
         await next();
     });
 }
-
 app.UseAuthorization();
 
-// ========== DATABASE SEEDING ==========
+// DATABASE SEEDING
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -182,9 +163,7 @@ using (var scope = app.Services.CreateScope())
     await DatabaseSeeder.SeedAsync(context);
 }
 
-// ============================================================
-// AUTHENTICATION ENDPOINTS
-// ============================================================
+// ================== AUTH ENDPOINTS ==================
 var authGroup = app.MapGroup("api/auth").WithTags("Authentication");
 
 authGroup.MapPost("/register", async (Register.Command command, ISender sender) =>
@@ -202,9 +181,7 @@ authGroup.MapPost("/register", async (Register.Command command, ISender sender) 
 authGroup.MapPost("/login", async (Login.Query query, ISender sender) =>
 {
     var result = await sender.Send(query);
-    return result.IsSuccess
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
 })
 .WithName("Login")
 .AllowAnonymous()
@@ -222,9 +199,7 @@ authGroup.MapGet("/me", async (ClaimsPrincipal user, ISender sender) =>
     }
 
     var result = await sender.Send(new GetCurrentUser.Query { UserId = userId });
-    return result.IsSuccess
-        ? Results.Ok(result.Value)
-        : Results.NotFound(new { errors = result.Errors });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.NotFound(new { errors = result.Errors });
 })
 .WithName("GetCurrentUser")
 .RequireAuthorization()
@@ -232,17 +207,13 @@ authGroup.MapGet("/me", async (ClaimsPrincipal user, ISender sender) =>
 .Produces(StatusCodes.Status401Unauthorized)
 .Produces<object>(StatusCodes.Status404NotFound);
 
-// ============================================================
-// MENU ENDPOINTS
-// ============================================================
+// ================== MENU ENDPOINTS ==================
 var menuGroup = app.MapGroup("api/menu").WithTags("Menu");
 
 menuGroup.MapGet("/", async (ISender sender) =>
 {
     var result = await sender.Send(new GetMenu.Query());
-    return result.IsSuccess
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { error = result.Error });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { error = result.Error });
 })
 .WithName("GetMenu")
 .AllowAnonymous()
@@ -251,9 +222,7 @@ menuGroup.MapGet("/", async (ISender sender) =>
 menuGroup.MapGet("/{id:guid}", async (Guid id, ISender sender) =>
 {
     var result = await sender.Send(new GetProductById.Query(id));
-    return result.IsSuccess
-        ? Results.Ok(result.Value)
-        : Results.NotFound(new { error = result.Error });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.NotFound(new { error = result.Error });
 })
 .WithName("GetProductById")
 .AllowAnonymous()
@@ -290,39 +259,26 @@ menuGroup.MapPut("/{id:guid}", async (Guid id, UpdateProduct.Command command, IS
 menuGroup.MapDelete("/{id:guid}", async (Guid id, ISender sender) =>
 {
     var result = await sender.Send(new DeleteProduct.Command(id));
-    return result.IsSuccess
-        ? Results.NoContent()
-        : Results.BadRequest(new { error = result.Error });
+    return result.IsSuccess ? Results.NoContent() : Results.BadRequest(new { error = result.Error });
 })
 .WithName("DeleteProduct")
 .Produces(StatusCodes.Status204NoContent)
 .Produces<object>(StatusCodes.Status400BadRequest);
 
-// ============================================================
-// ORDERS ENDPOINTS (SECURED)
-// ============================================================
+// ================== ORDERS ENDPOINTS (SECURED) ==================
 var ordersGroup = app.MapGroup("api/orders").WithTags("Orders");
 
 ordersGroup.MapPost("/", async (CreateOrder.Command command, ClaimsPrincipal user, ISender sender) =>
 {
-    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                   ?? user.FindFirst("sub")?.Value;
-
+    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
     if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var authenticatedUserId))
     {
         return Results.Unauthorized();
     }
-
-    // User can only create orders for themselves
-    if (command.UserId != authenticatedUserId)
-    {
-        return Results.Forbid();
-    }
+    if (command.UserId != authenticatedUserId) { return Results.Forbid(); }
 
     var result = await sender.Send(command);
-    return result.IsSuccess
-        ? Results.Created($"/api/orders/{result.Value!.Id}", result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+    return result.IsSuccess ? Results.Created($"/api/orders/{result.Value!.Id}", result.Value) : Results.BadRequest(new { errors = result.Errors });
 })
 .WithName("CreateOrder")
 .RequireAuthorization()
@@ -333,25 +289,18 @@ ordersGroup.MapPost("/", async (CreateOrder.Command command, ClaimsPrincipal use
 
 ordersGroup.MapGet("/user/{userId:guid}", async (Guid userId, ClaimsPrincipal user, ISender sender) =>
 {
-    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                   ?? user.FindFirst("sub")?.Value;
-
+    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
     if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var authenticatedUserId))
     {
         return Results.Unauthorized();
     }
-
-    // User can only view their own orders (unless Staff/Admin)
     var userRole = user.FindFirst(ClaimTypes.Role)?.Value;
     if (userId != authenticatedUserId && userRole != "Staff" && userRole != "Admin")
     {
         return Results.Forbid();
     }
-
     var result = await sender.Send(new GetUserOrders.Query { UserId = userId });
-    return result.IsSuccess
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
 })
 .WithName("GetUserOrders")
 .RequireAuthorization()
@@ -362,18 +311,13 @@ ordersGroup.MapGet("/user/{userId:guid}", async (Guid userId, ClaimsPrincipal us
 
 ordersGroup.MapGet("/{orderId:guid}", async (Guid orderId, ClaimsPrincipal user, ISender sender) =>
 {
-    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                   ?? user.FindFirst("sub")?.Value;
-
+    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
     if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var authenticatedUserId))
     {
         return Results.Unauthorized();
     }
-
     var result = await sender.Send(new GetOrderById.Query { OrderId = orderId, UserId = authenticatedUserId });
-    return result.IsSuccess
-        ? Results.Ok(result.Value)
-        : Results.NotFound(new { errors = result.Errors });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.NotFound(new { errors = result.Errors });
 })
 .WithName("GetOrderById")
 .RequireAuthorization()
@@ -383,23 +327,18 @@ ordersGroup.MapGet("/{orderId:guid}", async (Guid orderId, ClaimsPrincipal user,
 
 ordersGroup.MapDelete("/{orderId:guid}", async (Guid orderId, string? cancellationReason, ClaimsPrincipal user, ISender sender) =>
 {
-    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                   ?? user.FindFirst("sub")?.Value;
-
+    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
     if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var authenticatedUserId))
     {
         return Results.Unauthorized();
     }
-
     var result = await sender.Send(new CancelOrder.Command
     {
         OrderId = orderId,
         UserId = authenticatedUserId,
         CancellationReason = cancellationReason
     });
-    return result.IsSuccess
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
 })
 .WithName("CancelOrder")
 .RequireAuthorization()
@@ -407,17 +346,13 @@ ordersGroup.MapDelete("/{orderId:guid}", async (Guid orderId, string? cancellati
 .Produces(StatusCodes.Status401Unauthorized)
 .Produces<object>(StatusCodes.Status400BadRequest);
 
-// ============================================================
-// KITCHEN ENDPOINTS (STAFF ONLY)
-// ============================================================
+// ================== KITCHEN ENDPOINTS ==================
 var kitchenGroup = app.MapGroup("api/kitchen").WithTags("Kitchen");
 
 kitchenGroup.MapGet("/pending", async (ISender sender) =>
 {
     var result = await sender.Send(new GetPendingOrders.Query());
-    return result.IsSuccess
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
 })
 .WithName("GetPendingOrders")
 .RequireAuthorization(policy => policy.RequireRole("Staff", "Admin"))
@@ -430,9 +365,7 @@ kitchenGroup.MapPatch("/orders/{orderId:guid}/status", async (Guid orderId, Upda
 {
     var updatedCommand = command with { OrderId = orderId };
     var result = await sender.Send(updatedCommand);
-    return result.IsSuccess
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
 })
 .WithName("UpdateOrderStatus")
 .RequireAuthorization(policy => policy.RequireRole("Staff", "Admin"))
@@ -444,9 +377,7 @@ kitchenGroup.MapPatch("/orders/{orderId:guid}/status", async (Guid orderId, Upda
 kitchenGroup.MapGet("/inventory/daily", async (DateTime? reportDate, ISender sender) =>
 {
     var result = await sender.Send(new GetDailyInventoryReport.Query { ReportDate = reportDate });
-    return result.IsSuccess
-        ? Results.Ok(result.Value)
-        : Results.BadRequest(new { errors = result.Errors });
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
 })
 .WithName("GetDailyInventoryReport")
 .RequireAuthorization(policy => policy.RequireRole("Staff", "Admin"))
@@ -454,5 +385,140 @@ kitchenGroup.MapGet("/inventory/daily", async (DateTime? reportDate, ISender sen
 .Produces(StatusCodes.Status401Unauthorized)
 .Produces(StatusCodes.Status403Forbidden)
 .Produces<object>(StatusCodes.Status400BadRequest);
+
+// ================== PAYMENTS ENDPOINT ==================
+var paymentsGroup = app.MapGroup("api/payments").WithTags("Payments");
+
+// Procesare plată (POST /api/payments/process)
+paymentsGroup.MapPost("/process", async (ProcessPayment.Command command, ISender sender) =>
+    {
+        var result = await sender.Send(command);
+        return result.IsSuccess
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    })
+    .WithName("ProcessPayment")
+    .RequireAuthorization()
+    .Produces<PaymentDto>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status400BadRequest);
+
+// Istoric plăți pentru user
+paymentsGroup.MapGet("/user/{userId:guid}/history", async (Guid userId, ISender sender, ClaimsPrincipal user) =>
+    {
+        // Asigură-te că user-ul are voie (doar propriul istoric sau Staff/Admin)
+        var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
+        var userRole = user.FindFirst(ClaimTypes.Role)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var currentUserId))
+            return Results.Unauthorized();
+        if (userId != currentUserId && userRole != "Staff" && userRole != "Admin")
+            return Results.Forbid();
+
+        var payments = await sender.Send(new GetUserPayments.Query(userId));
+        return Results.Ok(payments);
+    })
+    .WithName("GetUserPaymentHistory")
+    .RequireAuthorization()
+    .Produces<List<PaymentDto>>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status401Unauthorized)
+    .Produces(StatusCodes.Status403Forbidden);
+
+// Istoric plăți pentru o comandă
+paymentsGroup.MapGet("/order/{orderId:guid}", async (Guid orderId, ISender sender, ClaimsPrincipal user) =>
+    {
+        // Poți adăuga validări aici ca la orders
+        var payments = await sender.Send(new GetOrderPayments.Query(orderId));
+        return Results.Ok(payments);
+    })
+    .WithName("GetOrderPayments")
+    .RequireAuthorization()
+    .Produces<List<PaymentDto>>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status401Unauthorized);
+
+// STRIPE WEBHOOK ENDPOINT
+app.MapPost("/api/payments/webhook/stripe", async (HttpRequest req, AppDbContext db) =>
+{
+    string json = await new StreamReader(req.Body).ReadToEndAsync();
+    var stripeSettings = app.Services.GetRequiredService<IConfiguration>().GetSection("Stripe").Get<StripeSettings>();
+    var stripeEvent = Stripe.EventUtility.ConstructEvent(json, req.Headers["Stripe-Signature"], stripeSettings?.WebhookSecret);
+
+    if (stripeEvent.Type == "payment_intent.succeeded")
+    {
+        var intent = stripeEvent.Data.Object as PaymentIntent;
+        var payment = await db.Payments.FirstOrDefaultAsync(p => intent != null && p.StripePaymentIntentId == intent.Id);
+        if (payment != null)
+        {
+            payment.Status = PaymentStatus.Completed;
+            payment.PaidAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+    }
+    else if (stripeEvent.Type == "payment_intent.payment_failed")
+    {
+        var intent = stripeEvent.Data.Object as PaymentIntent;
+        var payment = await db.Payments.FirstOrDefaultAsync(p => intent != null && p.StripePaymentIntentId == intent.Id);
+        if (payment != null)
+        {
+            payment.Status = PaymentStatus.Failed;
+            payment.FailureReason = intent?.LastPaymentError?.Message ?? "Stripe reported failed payment";
+            payment.FailedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+    }
+    return Results.Ok();
+});
+
+paymentsGroup.MapPatch("/{paymentId:guid}/refund", async (Guid paymentId, string? reason, ClaimsPrincipal user, ISender sender) =>
+    {
+        // Doar Staff/Admin poate refunda!
+        var userRole = user.FindFirst(ClaimTypes.Role)?.Value;
+        if (userRole != "Staff" && userRole != "Admin")
+            return Results.Forbid();
+
+        var result = await sender.Send(new RefundPayment.Command(paymentId, reason));
+        return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+    })
+    .WithName("RefundPayment")
+    .RequireAuthorization(policy => policy.RequireRole("Staff", "Admin"))
+    .Produces<PaymentDto>(StatusCodes.Status200OK)
+    .Produces<object>(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status403Forbidden);
+
+paymentsGroup.MapGet("/user/{userId:guid}/history", async (Guid userId, int page, int pageSize, string? status, string? method, ISender sender, ClaimsPrincipal user) =>
+    {
+        // Restricții securitate (ca înainte)
+        var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
+        var userRole = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var currentUserId))
+            return Results.Unauthorized();
+        if (userId != currentUserId && userRole != "Staff" && userRole != "Admin")
+            return Results.Forbid();
+
+        var result = await sender.Send(new GetUserPayments.Query(userId, page, pageSize, status, method));
+        return result.IsSuccess
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    })
+    .WithName("GetUserPaymentHistory")
+    .RequireAuthorization()
+    .Produces<PagedResult<PaymentDto>>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status401Unauthorized)
+    .Produces(StatusCodes.Status403Forbidden);
+
+paymentsGroup.MapGet("/", async (int page, int pageSize, string? status, string? method, ISender sender, ClaimsPrincipal user) =>
+    {
+        // Securitate: doar Staff/Admin
+        var userRole = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+        if (userRole != "Staff" && userRole != "Admin")
+            return Results.Forbid();
+
+        var result = await sender.Send(new GetAllPayments.Query(page, pageSize, status, method));
+        return result.IsSuccess
+            ? Results.Ok(result.Value)
+            : Results.BadRequest(new { errors = result.Errors });
+    })
+    .WithName("GetAllPayments")
+    .RequireAuthorization(policy => policy.RequireRole("Staff", "Admin"))
+    .Produces<PagedResult<PaymentDto>>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status403Forbidden);
 
 app.Run();
