@@ -4,78 +4,52 @@
 @inject AuthService AuthService
 @inject NavigationManager Nav
 
-<nav class="navbar navbar-expand bg-danger navbar-dark sticky-top shadow-sm">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/">CampusEats</a>
+<nav class="navbar navbar-dark bg-danger shadow">
+    <!-- Left Side -->
+    <div class="container-fluid d-flex justify-content-between">
+        <span class="navbar-brand fs-5 text-light">
+            Welcome, @(string.IsNullOrWhiteSpace(AuthState.Username) ? "Guest" : AuthState.Username)
+        </span>
 
-    <ul class="navbar-nav me-auto mb-0">
-      <li class="nav-item"><NavLink class="nav-link" href="/">Home</NavLink></li>
-      <li class="nav-item"><NavLink class="nav-link" href="/menu">Menu</NavLink></li>
-      <li class="nav-item"><NavLink class="nav-link" href="/cart">Cart</NavLink></li>
-      <li class="nav-item"><NavLink class="nav-link" href="/orders">My Orders</NavLink></li>
-
-      @if (IsStaffOrAdmin)
-      {
-        <li class="nav-item"><NavLink class="nav-link" href="/kitchen">Kitchen</NavLink></li>
-        <li class="nav-item"><NavLink class="nav-link" href="/inventory">Inventory</NavLink></li>
-      }
-
-      @if (IsAdmin)
-      {
-        <li class="nav-item"><NavLink class="nav-link" href="/products-admin">Admin</NavLink></li>
-      }
-    </ul>
-
-    <ul class="navbar-nav ms-auto mb-0">
-      @if (!AuthState.IsAuthenticated)
-      {
-        <li class="nav-item me-2">
-          <NavLink class="btn btn-sm btn-outline-light" href="/login">Sign in</NavLink>
-        </li>
-        <li class="nav-item">
-          <NavLink class="btn btn-sm btn-light text-danger" href="/register">Register</NavLink>
-        </li>
-      }
-      else
-      {
-        <li class="nav-item d-flex align-items-center me-3">
-          <span class="navbar-text text-white-50">
-            Signed in as <strong>@(string.IsNullOrWhiteSpace(AuthState.Username) ? "user" : AuthState.Username)</strong>
-          </span>
-        </li>
-        <li class="nav-item">
-          <button class="btn btn-sm btn-outline-light" @onclick="DoLogout">Logout</button>
-        </li>
-      }
-    </ul>
-  </div>
+        <!-- Right Side -->
+        <ul class="navbar-nav flex-row">
+            @if (AuthState.IsAuthenticated)
+            {
+                <li class="nav-item">
+                    <button class="btn btn-outline-light" @onclick="DoLogout">Logout</button>
+                </li>
+            }
+            else
+            {
+                <li class="nav-item">
+                    <NavLink class="btn btn-outline-light me-2" href="/login">Sign In</NavLink>
+                </li>
+                <li class="nav-item">
+                    <NavLink class="btn btn-light text-danger" href="/register">Register</NavLink>
+                </li>
+            }
+        </ul>
+    </div>
 </nav>
 
 @code {
-  private bool IsStaffOrAdmin =>
-      AuthState.Roles.Any(r => string.Equals(r, "Staff", StringComparison.OrdinalIgnoreCase) ||
-                               string.Equals(r, "Admin", StringComparison.OrdinalIgnoreCase));
+    protected override void OnInitialized()
+    {
+        AuthService.AuthStateChanged += OnChanged;
+        AuthState.Changed += OnChanged;
+    }
 
-  private bool IsAdmin =>
-      AuthState.Roles.Any(r => string.Equals(r, "Admin", StringComparison.OrdinalIgnoreCase));
+    private void OnChanged() => InvokeAsync(StateHasChanged);
 
-  protected override void OnInitialized()
-  {
-      AuthService.AuthStateChanged += OnChanged;
-      AuthState.Changed += OnChanged;
-  }
+    private async Task DoLogout()
+    {
+        await AuthService.LogoutAsync();
+        Nav.NavigateTo("/", forceLoad: true);
+    }
 
-  private void OnChanged() => InvokeAsync(StateHasChanged);
-
-  private async Task DoLogout()
-  {
-      await AuthService.LogoutAsync();
-      Nav.NavigateTo("/", forceLoad: true);
-  }
-
-  public void Dispose()
-  {
-      AuthService.AuthStateChanged -= OnChanged;
-      AuthState.Changed -= OnChanged;
-  }
+    public void Dispose()
+    {
+        AuthService.AuthStateChanged -= OnChanged;
+        AuthState.Changed -= OnChanged;
+    }
 }

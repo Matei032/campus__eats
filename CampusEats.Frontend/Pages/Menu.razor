@@ -8,6 +8,36 @@
 <PageTitle>Meniu - CampusEats</PageTitle>
 
 <div class="container mt-4">
+    <!-- SEARCH & FILTERS (subtil, compact) -->
+    <div class="mb-4">
+        <div class="row g-3">
+            <div class="col-md-8">
+                <input type="text"
+                       class="form-control"
+                       placeholder="🔍 Caută produse (burger, pizza, salată... )"
+                       @bind="SearchQuery"
+                       @bind:event="oninput"
+                       @onkeyup="FilterProducts" />
+            </div>
+            <div class="col-md-4">
+                <select class="form-select" @bind="SelectedCategory" @bind:after="FilterProducts">
+                    <option value="All">🍽️ Toate categoriile</option>
+                    <option value="Main">🍔 Main</option>
+                    <option value="Drink">🥤 Băuturi</option>
+                    <option value="Dessert">🍰 Deserturi</option>
+                    <option value="Snack">🥨 Snacks</option>
+                </select>
+            </div>
+        </div>
+
+        @if (!IsLoading && string.IsNullOrEmpty(ErrorMessage))
+        {
+            <small class="text-muted mt-2 d-block">
+                @FilteredProducts.Count @(FilteredProducts.Count == 1 ? "produs găsit" : "produse găsite")
+            </small>
+        }
+    </div>
+
     <h2 class="mb-4 text-center">Meniul Nostru</h2>
 
     @if (IsLoading)
@@ -25,24 +55,43 @@
             <button class="btn btn-outline-danger mt-2" @onclick="LoadMenu">Încearcă din nou</button>
         </div>
     }
+    else if (FilteredProducts.Count == 0)
+    {
+        <div class="text-center p-5">
+            <div style="font-size: 4rem; opacity: 0.3;">🔍</div>
+            <h4>Nu am găsit produse</h4>
+            <p class="text-muted">Încearcă alt termen de căutare sau resetează filtrele. </p>
+            <button class="btn btn-primary" @onclick="ClearFilters">🔄 Resetează</button>
+        </div>
+    }
     else
     {
         <div class="row row-cols-1 row-cols-md-3 g-4">
-            @foreach (var product in Products)
+            @foreach (var product in FilteredProducts)
             {
                 <div class="col">
-                    <div class="card h-100 shadow-sm">
-                        <img src="@product.ImageUrl" class="card-img-top" alt="@product.Name" 
-                             style="height: 200px; object-fit: cover;" 
-                             onerror="this.src='/images/placeholder-food.jpg'"> <div class="card-body d-flex flex-column">
+                    <div class="card h-100 shadow-sm product-card">
+                        <img src="@product.ImageUrl" class="card-img-top" alt="@product.Name"
+                             style="height: 200px; object-fit: cover;"
+                             onerror="this.src='/images/placeholder-food.jpg'">
+                        <div class="card-body d-flex flex-column">
                             <h5 class="card-title">@product.Name</h5>
-                            <span class="badge bg-info text-dark mb-2" style="width:fit-content">@product.Category</span>
+                            <span class="badge mb-2 category-badge-@product.Category. ToLower()" style="width:fit-content">
+                                @GetCategoryIcon(product.Category) @product.Category
+                            </span>
                             <p class="card-text text-muted small flex-grow-1">@product.Description</p>
-                            
+
+                            @if (product.Allergens?.Any() == true)
+                            {
+                                <small class="text-muted mb-2">
+                                    <strong>⚠️ Alergeni:</strong> @string.Join(", ", product.Allergens)
+                                </small>
+                            }
+
                             <div class="mt-3 d-flex justify-content-between align-items-center">
                                 <span class="fs-5 fw-bold text-success">@product.Price.ToString("0.00") RON</span>
                                 <button class="btn btn-primary" @onclick="() => AddToCart(product)">
-                                    Adaugă <i class="bi bi-cart-plus"></i>
+                                    🛒 Adaugă
                                 </button>
                             </div>
                         </div>
@@ -53,10 +102,46 @@
     }
 </div>
 
+<style>
+    /* Hover effect subtil pentru cards */
+    .product-card {
+        transition: all 0.3s ease;
+    }
+
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15) !important;
+        }
+
+    /* Category badges colorate */
+    .category-badge-main {
+        background: linear-gradient(135deg, #FF6B35 0%, #E55A2B 100%);
+        color: white;
+    }
+
+    .category-badge-drink {
+        background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+        color: white;
+    }
+
+    .category-badge-dessert {
+        background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%);
+        color: white;
+    }
+
+    .category-badge-snack {
+        background: linear-gradient(135deg, #FFC107 0%, #FFA000 100%);
+        color: white;
+    }
+</style>
+
 @code {
     private List<ProductDto> Products = new();
+    private List<ProductDto> FilteredProducts = new();
     private bool IsLoading = true;
     private string ErrorMessage = string.Empty;
+    private string SearchQuery = string.Empty;
+    private string SelectedCategory = "All";
 
     protected override async Task OnInitializedAsync()
     {
@@ -70,18 +155,17 @@
             IsLoading = true;
             ErrorMessage = string.Empty;
 
-            // 1. Facem apelul HTTP
-            // Folosim opțiuni pentru a fi siguri că "imageUrl" (JSON) se mapează pe "ImageUrl" (C#)
             var options = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             };
 
             Products = await Http.GetFromJsonAsync<List<ProductDto>>("api/menu", options) ?? new();
-            
+            FilteredProducts = Products;
+
             if (Products.Count == 0)
             {
-                ErrorMessage = "Nu există produse în meniu.";
+                ErrorMessage = "Nu există produse în meniu. ";
             }
         }
         catch (JsonException jsonEx)
@@ -99,6 +183,32 @@
             IsLoading = false;
         }
     }
+
+    private void FilterProducts()
+    {
+        FilteredProducts = Products
+            .Where(p => string.IsNullOrWhiteSpace(SearchQuery) ||
+                       p.Name.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                       p.Description.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
+            .Where(p => SelectedCategory == "All" || p.Category.Equals(SelectedCategory, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private void ClearFilters()
+    {
+        SearchQuery = string.Empty;
+        SelectedCategory = "All";
+        FilterProducts();
+    }
+
+    private string GetCategoryIcon(string category) => category.ToLower() switch
+    {
+        "main" => "🍔",
+        "drink" => "🥤",
+        "dessert" => "🍰",
+        "snack" => "🥨",
+        _ => "🍽️"
+    };
 
     private async Task AddToCart(ProductDto product)
     {

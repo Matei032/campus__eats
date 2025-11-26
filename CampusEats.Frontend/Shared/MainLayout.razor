@@ -2,26 +2,22 @@
 @inject CampusEats.Frontend.Services.CartService CartService
 
 <div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+    <!-- Full-width navigation bar -->
+    <NavMenu />
 
-    <main>
-        <div class="top-row px-4">
-            <HeaderBar />
-        </div>
-
-        <article class="content px-4">
-            @Body  </article>
+    <main style="width: 100%;">
+        <article class="content">
+            @Body
+        </article>
     </main>
 </div>
 
 @code {
     protected override async Task OnInitializedAsync()
     {
-        // Inițializăm coșul, dar prindem erorile ca să nu crăpe tot site-ul
-        try 
+        try
         {
+            // Inițializare coș
             await CartService.InitializeAsync();
         }
         catch (Exception ex)

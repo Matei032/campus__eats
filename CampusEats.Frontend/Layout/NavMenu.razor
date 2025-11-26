@@ -1,46 +1,86 @@
 ﻿@using CampusEats.Frontend.State
+@using CampusEats.Frontend.Features.Auth
 @inject AuthState AuthState
+@inject AuthService AuthService
+@inject NavigationManager Nav
 
-<div class="top-row px-4 navbar navbar-dark bg-danger">
-    <a class="navbar-brand" href="/">CampusEats</a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
-        <span class="navbar-toggler-icon"></span>
-    </button>
-    <div id="navMain" class="collapse navbar-collapse">
-        <ul class="navbar-nav me-auto">
-            <li class="nav-item px-2"><NavLink class="nav-link" href="/">Home</NavLink></li>
-            <li class="nav-item px-2"><NavLink class="nav-link" href="/menu">Menu</NavLink></li>
-            <li class="nav-item px-2"><NavLink class="nav-link" href="/cart">Cart</NavLink></li>
-            <li class="nav-item px-2"><NavLink class="nav-link" href="/orders">My Orders</NavLink></li>
+<nav class="navbar navbar-expand-lg navbar-dark sticky-top shadow-sm">
+    <div class="container-fluid px-4">
+        <a class="navbar-brand fw-bold fs-5 text-white" href="/">
+            🍽️ CampusEats
+        </a>
 
-            @if (IsStaffOrAdmin)
-            {
-                <li class="nav-item px-2"><NavLink class="nav-link" href="/kitchen">Kitchen</NavLink></li>
-                <li class="nav-item px-2"><NavLink class="nav-link" href="/inventory">Inventory</NavLink></li>
-            }
+        <!-- Navbar Toggler (Mobile) -->
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+            <span class="navbar-toggler-icon"></span>
+        </button>
 
-            @if (IsAdmin)
-            {
-                <li class="nav-item px-2"><NavLink class="nav-link" href="/products-admin">Admin</NavLink></li>
-            }
-        </ul>
+        <div id="navMain" class="collapse navbar-collapse">
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item">
+                    <NavLink class="nav-link text-white" href="/">Home</NavLink>
+                </li>
+                <li class="nav-item">
+                    <NavLink class="nav-link text-white" href="/menu">Menu</NavLink>
+                </li>
+                <li class="nav-item">
+                    <NavLink class="nav-link text-white" href="/cart">Cart</NavLink>
+                </li>
+                <li class="nav-item">
+                    <NavLink class="nav-link text-white" href="/orders">My Orders</NavLink>
+                </li>
 
-        <ul class="navbar-nav">
-            <AuthBadge />
-        </ul>
+                @if (AuthState.Roles.Any(role => role == "Staff" || role == "Admin"))
+                {
+                    <li class="nav-item">
+                        <NavLink class="nav-link text-white" href="/kitchen">Kitchen</NavLink>
+                    </li>
+                    <li class="nav-item">
+                        <NavLink class="nav-link text-white" href="/inventory">Inventory</NavLink>
+                    </li>
+                }
+
+                @if (AuthState.Roles.Contains("Admin"))
+                {
+                    <li class="nav-item">
+                        <NavLink class="nav-link text-white" href="/products-admin">Admin</NavLink>
+                    </li>
+                }
+            </ul>
+
+            <ul class="navbar-nav ms-auto">
+                @if (!AuthState.IsAuthenticated)
+                {
+                    <li class="nav-item">
+                        <NavLink class="btn btn-outline-light px-4" href="/login">Sign In</NavLink>
+                    </li>
+                    <li class="nav-item">
+                        <NavLink class="btn btn-light text-danger px-4" href="/register">Register</NavLink>
+                    </li>
+                }
+                else
+                {
+                    <li class="nav-item me-3">
+                        <span class="text-light">
+                            👤 @(string.IsNullOrWhiteSpace(AuthState.Username) ? "User" : AuthState.Username)
+                        </span>
+                    </li>
+                    <li class="nav-item">
+                        <button class="btn btn-outline-light px-4" @onclick="DoLogout">Logout</button>
+                    </li>
+                }
+            </ul>
+        </div>
     </div>
-</div>
+</nav>
 
 @code {
     private bool IsStaffOrAdmin =>
-        AuthState.Roles.Any(r => string.Equals(r, "Staff", StringComparison.OrdinalIgnoreCase) ||
-                                 string.Equals(r, "Admin", StringComparison.OrdinalIgnoreCase));
-
-    private bool IsAdmin =>
-        AuthState.Roles.Any(r => string.Equals(r, "Admin", StringComparison.OrdinalIgnoreCase));
+        AuthState.Roles.Any(role => role == "Staff" || role == "Admin");
 
     protected override void OnInitialized()
     {
+        AuthService.AuthStateChanged += OnChanged;
         AuthState.Changed += OnChanged;
     }
 
@@ -49,8 +89,15 @@
         InvokeAsync(StateHasChanged);
     }
 
+    private async Task DoLogout()
+    {
+        await AuthService.LogoutAsync();
+        Nav.NavigateTo("/", forceLoad: true);
+    }
+
     public void Dispose()
     {
+        AuthService.AuthStateChanged -= OnChanged;
         AuthState.Changed -= OnChanged;
     }
 }

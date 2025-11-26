@@ -1,7 +1,148 @@
 ﻿@page "/"
+@using CampusEats.Frontend.Models
+@using CampusEats.Frontend.Services
+@inject HttpClient Http
+@inject AuthState AuthState
+@inject NavigationManager Nav
 
 <PageTitle>Home</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="home-page">
+    <!-- HERO SECTION -->
+    <header class="hero-section text-center py-5" style="background-color: #FF6B35; color: white;">
+        <div class="container">
+            <h1 class="fw-bold mb-3">Welcome to CampusEats!</h1>
+            <p class="lead">Discover, Order, and Enjoy Delicious Meals Anytime!</p>
+            <NavLink class="btn btn-light btn-lg px-4 mt-3 text-danger" href="/menu">
+                Explore Our Menu
+            </NavLink>
+        </div>
+    </header>
 
-Welcome to your new app.
+    <div class="container mt-5">
+        <!-- POPULAR PRODUCTS -->
+        <section class="popular-products mb-5">
+            <h2 class="text-center fw-bold">Popular Products</h2>
+            <div class="row row-cols-1 row-cols-md-3 g-4">
+                @foreach (var product in Products.Take(3))
+                {
+                    <div class="col">
+                        <div class="card h-100 shadow-sm">
+                            <img src="@product.ImageUrl" class="card-img-top" alt="@product.Name"
+                                 style="height: 200px; object-fit: cover;"
+                                 onerror="this.src='/images/placeholder-food.jpg'">
+                            <div class="card-body">
+                                <h5 class="card-title">@product.Name</h5>
+                                <p class="card-text text-muted">@product.Description</p>
+                                <span class="badge @(GetCategoryBadgeColor(product.Category))">@product.Category</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <!-- LATEST ORDERS -->
+        @if (AuthState.IsAuthenticated)
+        {
+            <section class="latest-orders mb-5">
+                <h2 class="text-center fw-bold">Your Latest Orders</h2>
+                <div class="row g-4">
+                    @foreach (var order in LatestOrders)
+                    {
+                        <div class="col-md-4">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-body">
+                                    <h5 class="card-title">Order #@order.OrderNumber (@order.CreatedAt.ToShortDateString())</h5>
+                                    <p class="card-text">
+                                        Items: @string.Join(", ", order.OrderItems.Select(item => $"{item.Quantity}x {item.ProductName}"))
+                                    </p>
+                                    <span class="badge bg-@(GetStatusBadgeColor(order.Status))">@order.Status</span>
+                                    <p class="text-muted small">Total: @order.TotalAmount.ToString("0.00") RON</p>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+
+        <!-- ROLE-BASED CTA -->
+        @if (AuthState.Roles.Contains("Admin") || AuthState.Roles.Contains("Staff"))
+        {
+            <section class="role-based-links text-center mb-5">
+                <h2 class="fw-bold">Tools for You</h2>
+                <div class="btn-group mt-3">
+                    @if (AuthState.Roles.Contains("Admin"))
+                    {
+                        <NavLink class="btn btn-outline-danger px-4" href="/products-admin">Admin Panel</NavLink>
+                    }
+                    @if (AuthState.Roles.Contains("Staff"))
+                    {
+                        <NavLink class="btn btn-outline-success px-4" href="/kitchen">Kitchen Management</NavLink>
+                    }
+                </div>
+            </section>
+        }
+
+        <!-- FOOTER -->
+        <footer class="text-center py-4 mt-5 border-top">
+            <span class="text-muted">&copy; CampusEats 2025. All rights reserved.</span>
+        </footer>
+    </div>
+</div>
+
+@code {
+    private List<ProductDto> Products = new();
+    private List<OrderDto> LatestOrders = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPopularProducts();
+        if (AuthState.IsAuthenticated)
+        {
+            await LoadLatestOrders();
+        }
+    }
+
+    private async Task LoadPopularProducts()
+    {
+        try
+        {
+            Products = await Http.GetFromJsonAsync<List<ProductDto>>("api/menu") ?? new();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading products: {ex.Message}");
+        }
+    }
+
+    private async Task LoadLatestOrders()
+    {
+        try
+        {
+            LatestOrders = await Http.GetFromJsonAsync<List<OrderDto>>("api/orders") ?? new();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading orders: {ex.Message}");
+        }
+    }
+
+    private string GetCategoryBadgeColor(string category) => category.ToLower() switch
+    {
+        "main" => "primary",
+        "drink" => "info",
+        "dessert" => "warning",
+        "snack" => "success",
+        _ => "secondary"
+    };
+
+    private string GetStatusBadgeColor(string status) => status.ToLower() switch
+    {
+        "pending" => "warning",
+        "preparing" => "info",
+        "ready" => "success",
+        _ => "secondary"
+    };
+}
