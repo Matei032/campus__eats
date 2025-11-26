@@ -45,7 +45,13 @@
     {
         loading = true;
         errors.Clear();
-        var (ok, errs) = await AuthService.LoginAsync(model.Email, model.Password);
+        var request = new CampusEats.Frontend.Models.Auth.LoginRequest
+        {
+            Email = model.Email,
+            Password = model.Password
+        };
+
+        (var ok, var errs) = await AuthService.LoginAsync(request); // Așa este corect
         loading = false;
 
         if (!ok)

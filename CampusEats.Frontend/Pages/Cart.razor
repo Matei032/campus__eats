@@ -1,111 +1,213 @@
 @page "/cart"
-@inject CampusEats.Frontend.Services.CartService CartSvc
-@inject CampusEats.Frontend.Services.ApiClient Api
+@using CampusEats.Frontend.Services
+@using CampusEats.Frontend.Models
+@using CampusEats.Frontend.Models.Requests
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using System.Threading.Tasks
 
-<h3 class="mb-3">Your Cart</h3>
+@inject CartService CartService
+@inject ApiClient Api
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthStateProvider
 
-@if (!CartSvc.Items.Any())
-{
-    <div class="alert alert-info">
-        Cart is empty. Go to <a href="menu">Menu</a>.
-    </div>
-}
-else
-{
-    <table class="table align-middle">
-      <thead>
-        <tr>
-          <th>Item</th>
-          <th style="width:140px">Qty</th>
-          <th class="text-end" style="width:140px">Price</th>
-          <th class="text-end" style="width:140px">Subtotal</th>
-          <th style="width:80px"></th>
-        </tr>
-      </thead>
-      <tbody>
-      @foreach (var i in CartSvc.Items)
-      {
-          <tr>
-            <td>@i.Name</td>
-            <td>
-                <input type="number" class="form-control" min="0" value="@i.Quantity"
-                       @onchange="(e) => OnQuantityChanged(i, e)" />
+<PageTitle>Coșul Meu - CampusEats</PageTitle>
 
-            </td>
-            <td class="text-end">@i.UnitPrice.ToString("0.00") RON</td>
-            <td class="text-end">@i.Subtotal.ToString("0.00") RON</td>
-            <td class="text-end">
-              <button class="btn btn-outline-danger btn-sm" @onclick="() => CartSvc.Remove(i.ProductId)">X</button>
-            </td>
-          </tr>
-      }
-      </tbody>
-      <tfoot>
-        <tr>
-          <th colspan="3" class="text-end">Total:</th>
-          <th class="text-end">@CartSvc.Total.ToString("0.00") RON</th>
-          <th></th>
-        </tr>
-      </tfoot>
-    </table>
+<div class="container mt-4">
+    <h2 class="mb-4">Coșul de Cumpărături</h2>
 
-    <EditForm Model="@_checkout" OnValidSubmit="Checkout">
-        <div class="row g-2">
-            <div class="col-sm-4">
-                <InputText @bind-Value="_checkout.UserIdText" class="form-control" placeholder="UserId (GUID)" />
+    @if (CartService.Items.Count == 0)
+    {
+        <div class="alert alert-info text-center">
+            Coșul tău este gol. <a href="menu" class="alert-link">Vezi Meniul</a>
+        </div>
+    }
+    else
+    {
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                        @foreach (var item in CartService.Items)
+                        {
+                            <div class="d-flex justify-content-between align-items-center border-bottom py-3">
+                                <div>
+                                    <h5 class="mb-1">@item.Name</h5>
+                                    <small class="text-muted">Preț unitar: @item.UnitPrice.ToString("F2") RON</small>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <input type="number" class="form-control form-control-sm me-3" style="width: 70px;" 
+                                           value="@item.Quantity" 
+                                           min="1"
+                                           @onchange="@(async (e) => await UpdateQty(item, e))" />
+                                    
+                                    <span class="fw-bold me-4" style="width: 80px; text-align: right;">
+                                        @item.Subtotal.ToString("F2") RON
+                                    </span>
+                                    
+                                    <button class="btn btn-outline-danger btn-sm" @onclick="async () => await CartService.Remove(item.ProductId)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
             </div>
-            <div class="col-sm-3">
-                <InputText @bind-Value="_checkout.PaymentMethod" class="form-control" placeholder="Payment method" />
-            </div>
-            <div class="col-sm-5">
-                <InputText @bind-Value="_checkout.Notes" class="form-control" placeholder="Notes (optional)" />
+
+            <div class="col-md-4">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">Sumar Comandă</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between mb-3">
+                            <span>Total Produse:</span>
+                            <span class="fw-bold">@CartService.Total.ToString("F2") RON</span>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Metodă Plată</label>
+                            <select class="form-select" @bind="PaymentMethod">
+                                <option value="Cash">Cash la livrare</option>
+                                <option value="Card">Card (Online/Terminal)</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Observații (Opțional)</label>
+                            <textarea class="form-control" rows="2" @bind="OrderNotes" placeholder="Ex: Fără tacâmuri, interfon 05..."></textarea>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(ErrorMessage))
+                        {
+                            <div class="alert alert-danger small">@ErrorMessage</div>
+                        }
+
+                        <button class="btn btn-success w-100 py-2" @onclick="HandleCheckout" disabled="@IsProcessing">
+                            @if (IsProcessing)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                                <span>Se procesează...</span>
+                            }
+                            else
+                            {
+                                <span>Finalizează Comanda</span>
+                            }
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
-        <button class="btn btn-danger mt-3" type="submit">Place Order</button>
-    </EditForm>
-
-    @if (_message is not null)
-    {
-        <div class="alert alert-success mt-3">@_message</div>
     }
-}
+</div>
 
 @code {
-    string? _message;
-    CheckoutVm _checkout = new();
+    private string PaymentMethod = "Cash";
+    private string OrderNotes = "";
+    private bool IsProcessing = false;
+    private string ErrorMessage = "";
 
-    void Update(Guid id, int qty) => CartSvc.UpdateQty(id, qty);
-
-    async Task Checkout()
+    protected override async Task OnInitializedAsync()
     {
-        if (!Guid.TryParse(_checkout.UserIdText, out var userId))
+        CartService.OnChange += StateHasChanged;
+        // Sincronizăm prețurile cu serverul (dacă metoda există în CartService)
+        // await RefreshPrices(); 
+    }
+
+    public void Dispose()
+    {
+        CartService.OnChange -= StateHasChanged;
+    }
+
+    private async Task UpdateQty(CartItem item, ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int qty))
         {
-            _message = "Invalid UserId";
+            await CartService.UpdateQty(item.ProductId, qty);
+        }
+    }
+
+    private async Task HandleCheckout()
+    {
+        IsProcessing = true;
+        ErrorMessage = "";
+
+        // 1. Verificăm autentificarea
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated != true)
+        {
+            ErrorMessage = "Trebuie să fii autentificat pentru a plasa comanda.";
+            IsProcessing = false;
             return;
         }
 
-        var items = CartSvc.Items
-            .Select(i => new OrderItemRequest(i.ProductId, i.Quantity, null))
-            .ToList();
+        // 2. Extragem ID-ul utilizatorului (Esențial pentru Backend)
+        var userIdClaim = user.FindFirst(c => c.Type == "sub") ?? 
+                          user.FindFirst(c => c.Type == ClaimTypes.NameIdentifier);
+        
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out Guid userId))
+        {
+            ErrorMessage = "Eroare de sesiune. Te rugăm să te reloghezi.";
+            IsProcessing = false;
+            return;
+        }
 
-        var cmd = new CreateOrderCommand(userId, _checkout.PaymentMethod, _checkout.Notes, items);
+        // 3. Construim obiectul comenzii
+        var command = new CreateOrderCommand
+        {
+            UserId = userId,
+            PaymentMethod = PaymentMethod, // "Cash" sau "Card"
+            Notes = OrderNotes,
+            Items = CartService.Items.Select(i => new OrderItemRequest
+            {
+                ProductId = i.ProductId,
+                Quantity = i.Quantity,
+                SpecialInstructions = "" // Poți adăuga câmp în UI per produs
+            }).ToList()
+        };
 
-        var order = await Api.CreateOrderAsync(cmd);
-        _message = order is null ? "Order failed." : $"Order placed! No: {order.OrderNumber}";
-        if (order is not null) CartSvc.Clear();
-        StateHasChanged();
+        try 
+        {
+            // 4. LOGICA DE PLATĂ
+            if (PaymentMethod == "Cash")
+            {
+                // Pentru Cash, trimitem comanda direct
+                var order = await Api.CreateOrderAsync(command);
+                
+                if (order != null)
+                {
+                    await CartService.Clear();
+                    NavigationManager.NavigateTo("/orders"); // Sau o pagină de succes
+                }
+                else
+                {
+                    ErrorMessage = "Nu am putut plasa comanda. Verifică consola pentru detalii.";
+                }
+            }
+            else if (PaymentMethod == "Card")
+            {
+                // Aici vei pune logica de Stripe (redirecționare sau componentă)
+                // Deocamdată, simulăm plasarea comenzii ca "Pending Payment"
+                var order = await Api.CreateOrderAsync(command);
+                if (order != null)
+                {
+                    await CartService.Clear();
+                    // Redirecționare către pagina de plată (dacă ai implementat-o)
+                    // NavigationManager.NavigateTo($"/payment/{order.Id}");
+                    NavigationManager.NavigateTo("/orders");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Eroare: {ex.Message}";
+        }
+        finally
+        {
+            IsProcessing = false;
+        }
     }
-
-    class CheckoutVm
-    {
-        public string? UserIdText { get; set; }
-        public string? PaymentMethod { get; set; }
-        public string? Notes { get; set; }
-    }
-    void OnQuantityChanged(CartItem i, ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), out var qty))
-            CartSvc.UpdateQty(i.ProductId, qty);
-    }
-
 }

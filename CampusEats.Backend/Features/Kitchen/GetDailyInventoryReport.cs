@@ -9,25 +9,11 @@ namespace CampusEats.Backend.Features.Kitchen;
 
 public static class GetDailyInventoryReport
 {
-    // QUERY
     public record Query : IRequest<Result<InventoryReportDto>>
     {
-        public DateTime? ReportDate { get; init; } = null; // Defaults to today
+        public DateTime? ReportDate { get; init; } = null;
     }
     
-    // VALIDATOR
-    public class Validator : AbstractValidator<Query>
-    {
-        public Validator()
-        {
-            RuleFor(x => x.ReportDate)
-                .LessThanOrEqualTo(DateTime.UtcNow.Date)
-                .WithMessage("Report date cannot be in the future")
-                .When(x => x.ReportDate.HasValue);
-        }
-    }
-    
-    // HANDLER
     internal sealed class Handler : IRequestHandler<Query, Result<InventoryReportDto>>
     {
         private readonly AppDbContext _context;
@@ -42,20 +28,22 @@ public static class GetDailyInventoryReport
             var reportDate = request.ReportDate?.Date ?? DateTime.UtcNow.Date;
             var nextDay = reportDate.AddDays(1);
 
-            // Get all orders for the specified date (completed orders only for accurate reporting)
+            // --- MODIFICARE IMPORTANTĂ ---
+            // Căutăm comenzi FINALIZATE în ziua respectivă (CompletedAt), nu create.
             var dailyOrders = await _context.Orders
                 .AsNoTracking()
-                .Where(o => o.CreatedAt >= reportDate && o.CreatedAt < nextDay && o.Status == "Completed")
+                .Where(o => o.Status == "Completed" && 
+                            o.CompletedAt >= reportDate && 
+                            o.CompletedAt < nextDay)
                 .Include(o => o.OrderItems)
                     .ThenInclude(oi => oi.Product)
                 .ToListAsync(cancellationToken);
+            // -----------------------------
 
-            // Get all products for complete inventory view
             var allProducts = await _context.Products
                 .AsNoTracking()
                 .ToListAsync(cancellationToken);
 
-            // Calculate inventory statistics per product
             var inventoryItems = allProducts.Select(product =>
             {
                 var productOrderItems = dailyOrders
@@ -68,21 +56,26 @@ public static class GetDailyInventoryReport
                 var orderCount = productOrderItems.Count;
                 var averageOrderValue = orderCount > 0 ? revenue / orderCount : 0;
 
+                // Includem în listă doar produsele care s-au vândut
+                if (quantitySold == 0) return null;
+
                 return new InventoryItemDto
                 {
                     ProductId = product.Id,
                     ProductName = product.Name,
-                    Category = product.Category,
                     QuantitySold = quantitySold,
+                    UnitPrice = product.Price, // Adăugăm prețul unitar pentru UI
+                    Subtotal = revenue,
                     Revenue = revenue,
                     OrderCount = orderCount,
                     AverageOrderValue = averageOrderValue
                 };
             })
-            .OrderByDescending(i => i.QuantitySold) // Most sold products first
+            .Where(i => i != null) // Filtrăm produsele nevândute
+            .Cast<InventoryItemDto>()
+            .OrderByDescending(i => i.QuantitySold)
             .ToList();
 
-            // Calculate daily totals
             var totalRevenue = dailyOrders.Sum(o => o.TotalAmount);
             var totalOrdersProcessed = dailyOrders.Count;
             var totalItemsSold = inventoryItems.Sum(i => i.QuantitySold);

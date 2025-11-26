@@ -1,16 +1,26 @@
-﻿namespace CampusEats.Frontend.Models;
+﻿using System;
+using System.Collections.Generic;
 
-public record ProductDto
+namespace CampusEats.Frontend.Models
 {
-    public Guid Id { get; init; }
-    public string Name { get; init; } = string.Empty;
-    public string? Description { get; init; }
-    public decimal Price { get; init; }
-    public string? Category { get; init; }
-    public string? ImageUrl { get; init; }
-
-    // IMPORTANT: backend trimite arrays -> păstrăm ca liste
-    public List<string>? Allergens { get; init; }
-    public List<string>? DietaryRestrictions { get; init; }
-    public bool IsAvailable { get; init; } = true;
+    public class ProductDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public decimal Price { get; set; }
+        public string ImageUrl { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public bool IsAvailable { get; set; }
+        
+        // --- LISTA NOUĂ DE PROPRIETĂȚI ---
+        // Trebuie să fie compatibile cu JSON-ul primit
+        public List<string> Allergens { get; set; } = new();
+        public string? DietaryRestrictions { get; set; } // Poate fi null în JSON
+        
+        public DateTime CreatedAt { get; set; }
+        
+        // CRITIC: Adaugă '?' pentru că în JSON vine "updatedAt": null
+        public DateTime? UpdatedAt { get; set; } 
+    }
 }

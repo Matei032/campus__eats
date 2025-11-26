@@ -1,9 +1,32 @@
 @inherits LayoutComponentBase
+@inject CampusEats.Frontend.Services.CartService CartService
 
-<HeaderBar />
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
 
-<main>
-  <article class="content container py-4">
-    @Body
-  </article>
-</main>
+    <main>
+        <div class="top-row px-4">
+            <HeaderBar />
+        </div>
+
+        <article class="content px-4">
+            @Body  </article>
+    </main>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        // Inițializăm coșul, dar prindem erorile ca să nu crăpe tot site-ul
+        try 
+        {
+            await CartService.InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Eroare la init coș: {ex.Message}");
+        }
+    }
+}

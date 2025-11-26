@@ -1,71 +1,182 @@
 @page "/kitchen"
-@using CampusEats.Frontend.Services
 @using CampusEats.Frontend.Models
+@using CampusEats.Frontend.Services
+@using System.Threading
+@using System.Linq
 @inject ApiClient Api
+@implements IDisposable
 
-<h3>Kitchen – Pending Orders</h3>
+<PageTitle>Kitchen Display - CampusEats</PageTitle>
 
-@if (_loading)
-{
-    <div class="alert alert-info">Loading…</div>
-}
-else if (!string.IsNullOrWhiteSpace(_error))
-{
-    <div class="alert alert-danger">@_error</div>
-}
-else if (_orders.Count == 0)
-{
-    <div class="alert alert-secondary">No pending orders.</div>
-}
-else
-{
-    <div class="table-responsive">
-        <table class="table table-sm">
-            <thead>
-                <tr>
-                    <th>Order</th>
-                    <th>User</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var o in _orders)
-                {
-                    <tr>
-                        <td>@o.Id</td>
-                        <td>@o.UserId</td>
-                        <td>@o.Status</td>
-                        <td>@o.CreatedAt.ToLocalTime()</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+<div class="container-fluid mt-3">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold"><i class="bi bi-fire text-danger me-2"></i>Kitchen Display System</h2>
+            <span class="text-muted">Comenzi active: <strong>@Orders.Count</strong></span>
+        </div>
+        <button class="btn btn-outline-primary" @onclick="LoadOrders">
+            <i class="bi bi-arrow-clockwise me-1"></i> Reîmprospătează
+        </button>
     </div>
-}
+
+    @if (IsLoading)
+    {
+        <div class="text-center mt-5">
+            <div class="spinner-border text-danger" role="status"></div>
+            <p>Se caută comenzi noi...</p>
+        </div>
+    }
+    else if (Orders.Count == 0)
+    {
+        <div class="alert alert-success text-center p-5">
+            <h4>Toate comenzile sunt gata! 🎉</h4>
+            <p>Momentan nu sunt comenzi în așteptare.</p>
+        </div>
+    }
+    else
+    {
+        <div class="row g-3">
+            @foreach (var order in Orders.OrderBy(o => o.CreatedAt))
+            {
+                <div class="col-md-4 col-lg-3">
+                    <div class="card h-100 shadow-sm border-top-3 @GetBorderClass(order.Status)">
+                        <div class="card-header d-flex justify-content-between align-items-center bg-white">
+                            <span class="badge @GetBadgeClass(order.Status)">@order.Status</span>
+                            <small class="text-muted">@order.CreatedAt.ToString("HH:mm")</small>
+                        </div>
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                #@(order.OrderNumber.Length >= 4 ? order.OrderNumber.Substring(order.OrderNumber.Length - 4) : order.OrderNumber)
+                            </h5>
+                            
+                            @if (!string.IsNullOrEmpty(order.Notes))
+                            {
+                                <div class="alert alert-warning py-1 small mb-2">
+                                    <i class="bi bi-exclamation-circle"></i> @order.Notes
+                                </div>
+                            }
+
+                            <ul class="list-group list-group-flush mb-3">
+                                @if (order.OrderItems != null)
+                                {
+                                    @foreach (var item in order.OrderItems)
+                                    {
+                                        <li class="list-group-item px-0 py-1 d-flex justify-content-between">
+                                            <span>
+                                                <span class="fw-bold me-1">x@(item.Quantity)</span> 
+                                                @item.ProductName
+                                            </span>
+                                        </li>
+                                        @if(!string.IsNullOrEmpty(item.SpecialInstructions))
+                                        {
+                                            <li class="list-group-item px-0 py-0 border-0 text-danger small fst-italic">
+                                                Note: @item.SpecialInstructions
+                                            </li>
+                                        }
+                                    }
+                                }
+                            </ul>
+                        </div>
+                        <div class="card-footer bg-white border-0 pb-3">
+                            @if (order.Status == "Pending")
+                            {
+                                <button class="btn btn-warning w-100" @onclick='() => UpdateStatus(order.Id, "Preparing")'>
+                                    Start Preparare <i class="bi bi-play-fill"></i>
+                                </button>
+                            }
+                            else if (order.Status == "Preparing")
+                            {
+                                <button class="btn btn-success w-100" @onclick='() => UpdateStatus(order.Id, "Ready")'>
+                                    Gata de Ridicare <i class="bi bi-check-lg"></i>
+                                </button>
+                            }
+                            else if (order.Status == "Ready")
+                            {
+                                <button class="btn btn-outline-secondary w-100" @onclick='() => UpdateStatus(order.Id, "Completed")'>
+                                    Marchează Livrat <i class="bi bi-box-seam"></i>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .border-top-3 { border-top: 4px solid !important; }
+    .border-pending { border-color: #ffc107 !important; }
+    .border-preparing { border-color: #0d6efd !important; }
+    .border-ready { border-color: #198754 !important; }
+</style>
 
 @code {
-    bool _loading = true;
-    string? _error;
-    List<OrderDto> _orders = new();
+    private List<OrderDto> Orders = new();
+    private bool IsLoading = true;
+    private Timer? _timer;
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadOrders();
+        // Am scos lambda-ul complicat și folosim o metodă simplă
+        _timer = new Timer(OnTimerTick, null, 30000, 30000);
+    }
+
+    private void OnTimerTick(object? state)
+    {
+        // InvokeAsync este necesar pentru a actualiza UI-ul din Timer
+        _ = InvokeAsync(LoadOrders);
+    }
+
+    private async Task LoadOrders()
+    {
         try
         {
-            _orders = await Api.GetPendingKitchenOrdersAsync();
-        }
-        catch (HttpRequestException ex)
-        {
-            _error = ex.Message;
+            Orders = await Api.GetPendingKitchenOrdersAsync();
+            StateHasChanged();
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            Console.WriteLine($"Eroare Kitchen: {ex.Message}");
         }
         finally
         {
-            _loading = false;
+            IsLoading = false;
         }
+    }
+
+    private async Task UpdateStatus(Guid orderId, string newStatus)
+    {
+        try
+        {
+            await Api.UpdateOrderStatusAsync(orderId, newStatus);
+            await LoadOrders(); 
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Eroare update status: {ex.Message}");
+        }
+    }
+
+    private string GetBadgeClass(string status) => status switch
+    {
+        "Pending" => "bg-warning text-dark",
+        "Preparing" => "bg-primary",
+        "Ready" => "bg-success",
+        _ => "bg-secondary"
+    };
+
+    private string GetBorderClass(string status) => status switch
+    {
+        "Pending" => "border-pending",
+        "Preparing" => "border-preparing",
+        "Ready" => "border-ready",
+        _ => ""
+    };
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
     }
 }

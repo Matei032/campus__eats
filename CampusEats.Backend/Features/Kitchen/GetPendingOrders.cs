@@ -26,19 +26,14 @@ public static class GetPendingOrders
 
         public async Task<Result<List<OrderDto>>> Handle(Query request, CancellationToken cancellationToken)
         {
-            // Get orders that need kitchen attention (Pending, Preparing)
-            var pendingStatuses = new[] { "Pending", "Preparing" };
-            
             var orders = await _context.Orders
-                .AsNoTracking()  // Read-only query
-                .Where(o => pendingStatuses.Contains(o.Status))
+                .AsNoTracking()
+                .Where(o => o.Status == "Pending" || o.Status == "Preparing" || o.Status == "Ready") 
+                .OrderBy(o => o.CreatedAt)
                 .Include(o => o.OrderItems)
-                    .ThenInclude(oi => oi.Product)
-                .Include(o => o.User)  // Include user for display
-                .OrderBy(o => o.CreatedAt)  // Oldest first (FIFO - First In First Out)
+                .ThenInclude(oi => oi.Product) // <--- CRITIC: Includem produsul pentru a-i afla numele
                 .ToListAsync(cancellationToken);
 
-            // Map to DTOs
             var orderDtos = orders.Select(order => new OrderDto
             {
                 Id = order.Id,
@@ -56,10 +51,9 @@ public static class GetPendingOrders
                 {
                     Id = oi.Id,
                     ProductId = oi.ProductId,
-                    ProductName = oi.Product.Name,
+                    // ACUM FOLOSIM NUMELE REAL DIN BAZA DE DATE
+                    ProductName = oi.Product != null ? oi.Product.Name : "Produs necunoscut", 
                     Quantity = oi.Quantity,
-                    UnitPrice = oi.UnitPrice,
-                    Subtotal = oi.Subtotal,
                     SpecialInstructions = oi.SpecialInstructions
                 }).ToList()
             }).ToList();

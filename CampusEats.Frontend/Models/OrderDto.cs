@@ -1,29 +1,32 @@
-namespace CampusEats.Frontend.Models;
+using System;
+using System.Collections.Generic;
 
-public record OrderDto
+namespace CampusEats.Frontend.Models
 {
-    public Guid Id { get; init; }
-    public string OrderNumber { get; init; } = string.Empty;
-    public Guid UserId { get; init; }
-    public decimal TotalAmount { get; init; }
-    public string Status { get; init; } = string.Empty;
-    public string PaymentStatus { get; init; } = string.Empty;
-    public string? PaymentMethod { get; init; }
-    public string? Notes { get; init; }
-    public DateTime CreatedAt { get; init; }
-    public DateTime? UpdatedAt { get; init; }
-    public DateTime? CompletedAt { get; init; }
+    public class OrderDto
+    {
+        public Guid Id { get; set; }
+        public string OrderNumber { get; set; } = string.Empty;
+        public Guid UserId { get; set; }
+        public decimal TotalAmount { get; set; }
+        public string Status { get; set; } = string.Empty; // Pending, Preparing, Ready, Completed
+        public string PaymentStatus { get; set; } = string.Empty;
+        public string? PaymentMethod { get; set; }
+        public string? Notes { get; set; }
+        public DateTime CreatedAt { get; set; }
+        
+        // Această listă este CRITICĂ pentru Kitchen.razor
+        public List<OrderItemDto> OrderItems { get; set; } = new();
+    }
 
-    public List<OrderItemDto> OrderItems { get; init; } = new();
-}
-
-public record OrderItemDto
-{
-    public Guid Id { get; init; }
-    public Guid ProductId { get; init; }
-    public string ProductName { get; init; } = string.Empty;
-    public int Quantity { get; init; }
-    public decimal UnitPrice { get; init; }
-    public decimal Subtotal { get; init; }
-    public string? SpecialInstructions { get; init; }
+    public class OrderItemDto
+    {
+        public Guid Id { get; set; }
+        public Guid ProductId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public int Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal Subtotal { get; set; }
+        public string? SpecialInstructions { get; set; }
+    }
 }

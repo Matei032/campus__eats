@@ -1,315 +1,197 @@
 ﻿using System.Net.Http.Json;
 using System.Text.Json;
+using CampusEats.Frontend.Models.Auth;
 using CampusEats.Frontend.Services;
 using CampusEats.Frontend.State;
+using Microsoft.AspNetCore.Components.Authorization;
 
-namespace CampusEats.Frontend.Features.Auth;
-
-public class AuthService
+namespace CampusEats.Frontend.Features.Auth
 {
-	public const string JwtKey = "campuseats.jwt";
-	public const string EmailKey = "campuseats.email";
+    public class AuthService
+    {
+        private readonly HttpClient _httpClient;
+        private readonly LocalStorageService _localStorageService;
+        private readonly AuthState _authState;
 
-	private static readonly string[] FallbackJwtKeys = new[]
-	{
-		"jwt", "token", "access_token", "auth.token", "campuseats_token"
-	};
+        // 1. REPARAT: Am readăugat evenimentul pe care îl caută AuthBadge și HeaderBar
+        public event Action? AuthStateChanged;
 
-	private readonly LocalStorageService _storage;
-	private readonly AuthState _state;
-	private readonly HttpClient _http;
+        public AuthService(HttpClient httpClient, 
+                           LocalStorageService localStorageService, 
+                           AuthState authState)
+        {
+            _httpClient = httpClient;
+            _localStorageService = localStorageService;
+            _authState = authState;
+        }
 
-	// Componentele (AuthBadge/Nav/HeaderBar) se abonează la acest eveniment
-	public event Action? AuthStateChanged;
+        public async Task InitializeAsync()
+        {
+            var token = await _localStorageService.GetItemAsync("authToken");
 
-	public AuthService(LocalStorageService storage, AuthState state, HttpClient http)
-	{
-		_storage = storage;
-		_state = state;
-		_http = http;
-	}
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                // Acum preluăm și userId
+                var (userId, email, roles) = ParseJwt(token);
+                
+                // Trimitem userId către AuthState (trebuie să modifici și AuthState.Set!)
+                _authState.Set(token, userId, email, roles); 
+            }
+            else
+            {
+                _authState.Clear();
+            }
+            NotifyStateChanged();
+        }
 
-	// Se apelează în Program.cs înainte de RunAsync
-	public async Task InitializeAsync()
-	{
-		var token = await TryReadTokenAsync();
-		if (!string.IsNullOrWhiteSpace(token))
-		{
-			var (username, roles) = ParseJwt(token);
-			_state.Set(token, username, roles);
-			AuthStateChanged?.Invoke();
-			Console.WriteLine($"[AUTH] Initialized. User={username}, Roles=[{string.Join(",", roles)}]");
-		}
-		else
-		{
-			_state.Clear();
-			AuthStateChanged?.Invoke();
-			Console.WriteLine("[AUTH] No token in local storage.");
-		}
-	}
+        // 2. REPARAT: Redenumit în LoginAsync și schimbat return-ul în (bool, List<string>)
+        // pentru a fi compatibil cu Login.razor
+        public async Task<(bool ok, List<string> errors)> LoginAsync(LoginRequest request)
+        {
+            try
+            {
+                var response = await _httpClient.PostAsJsonAsync("/api/auth/login", request);
 
-	public async Task SaveTokenAsync(string token, string? usernameHint = null)
-	{
-		if (string.IsNullOrWhiteSpace(token))
-		{
-			await LogoutAsync();
-			return;
-		}
+                if (response.IsSuccessStatusCode)
+                {
+                    var authData = await response.Content.ReadFromJsonAsync<AuthResponseDto>();
 
-		await _storage.SetItemAsync(JwtKey, token);
+                    if (authData != null && !string.IsNullOrEmpty(authData.Token))
+                    {
+                        await HandleAuthSuccess(authData);
+                        return (true, new List<string>());
+                    }
+                }
 
-		var (username, roles) = ParseJwt(token);
-		if (!string.IsNullOrWhiteSpace(usernameHint) && string.IsNullOrWhiteSpace(username))
-			username = usernameHint;
+                // Extragem eroarea din backend dacă există
+                var errorMsg = await response.Content.ReadAsStringAsync();
+                return (false, new List<string> { "Autentificare eșuată.", errorMsg });
+            }
+            catch (Exception ex)
+            {
+                return (false, new List<string> { ex.Message });
+            }
+        }
 
-		if (!string.IsNullOrWhiteSpace(username))
-			await _storage.SetItemAsync(EmailKey, username);
+        public async Task<(bool ok, List<string> errors)> RegisterAsync(RegisterRequest request)
+        {
+            try
+            {
+                var response = await _httpClient.PostAsJsonAsync("/api/auth/register", request);
 
-		_state.Set(token, username, roles);
-		AuthStateChanged?.Invoke();
-		Console.WriteLine($"[AUTH] Token saved. User={username}, Roles=[{string.Join(",", roles)}]");
-	}
+                if (response.IsSuccessStatusCode)
+                {
+                    // ÎNCERCĂM să citim token-ul pentru auto-login
+                    try
+                    {
+                        var authData = await response.Content.ReadFromJsonAsync<AuthResponseDto>();
+                        
+                        // Dacă avem token, logăm utilizatorul automat
+                        if (authData != null && !string.IsNullOrEmpty(authData.Token))
+                        {
+                            await HandleAuthSuccess(authData);
+                        }
+                    }
+                    catch (JsonException)
+                    {
+                        // EROAREA TA ERA AICI!
+                        // Dacă backend-ul a trimis text simplu (ex: "Success") în loc de JSON, apărea eroarea.
+                        // Acum o prindem și o ignorăm (pentru că response.IsSuccessStatusCode e true, deci contul s-a creat).
+                        Console.WriteLine("Register reușit, dar fără token automat.");
+                    }
 
-	public async Task LogoutAsync()
-	{
-		await _storage.RemoveItemAsync(JwtKey);
-		await _storage.RemoveItemAsync(EmailKey);
-		_state.Clear();
-		AuthStateChanged?.Invoke();
-		Console.WriteLine("[AUTH] Logged out.");
-	}
+                    // Returnăm true pentru că userul a fost creat în baza de date
+                    return (true, new List<string>());
+                }
+                
+                // Gestionare erori (400 Bad Request etc.)
+                var errorMsg = await response.Content.ReadAsStringAsync();
+                return (false, new List<string> { "Înregistrare eșuată.", errorMsg });
+            }
+            catch (Exception ex)
+            {
+                return (false, new List<string> { ex.Message });
+            }
+        }
 
-	// Folosită de Login.razor: returnează (ok, errors)
-	public async Task<(bool ok, List<string> errors)> LoginAsync(string email, string password)
-	{
-		try
-		{
-			var payload = new { email, password };
-			using var resp = await _http.PostAsJsonAsync("/api/auth/login", payload);
+        // 3. REPARAT: Redenumit în LogoutAsync
+        public async Task LogoutAsync()
+        {
+            await _localStorageService.RemoveItemAsync("authToken");
+            _authState.Clear();
+            NotifyStateChanged();
+        }
 
-			if (!resp.IsSuccessStatusCode)
-			{
-				var errs = await ExtractErrors(resp);
-				return (false, errs);
-			}
+        private async Task HandleAuthSuccess(AuthResponseDto authData)
+        {
+            await _localStorageService.SetItemAsync("authToken", authData.Token);
+            
+            // Backend-ul ne dă ID-ul direct în authData.User.Id, deci e sigur
+            var userId = authData.User.Id.ToString();
+            var roles = new List<string> { authData.User.Role };
+            
+            _authState.Set(authData.Token, userId, authData.User.Email, roles);
+            NotifyStateChanged();
+        }
 
-			var text = await resp.Content.ReadAsStringAsync();
-			var (token, username, roles) = ParseLoginOrRegisterResponse(text);
+        private void NotifyStateChanged() => AuthStateChanged?.Invoke();
 
-			if (string.IsNullOrWhiteSpace(token))
-				return (false, new List<string> { "Login response did not include a token." });
+        // Helper actualizat pentru a extrage ID-ul utilizatorului
+        private static (string userId, string email, List<string> roles) ParseJwt(string token)
+        {
+            try
+            {
+                var parts = token.Split('.');
+                if (parts.Length < 2) return ("", "", new List<string>());
 
-			await SaveTokenAsync(token, string.IsNullOrWhiteSpace(username) ? email : username);
-			return (true, new());
-		}
-		catch (Exception ex)
-		{
-			return (false, new List<string> { ex.Message });
-		}
-	}
+                var payload = parts[1];
+                switch (payload.Length % 4)
+                {
+                    case 2: payload += "=="; break;
+                    case 3: payload += "="; break;
+                }
+                
+                var jsonBytes = Convert.FromBase64String(payload);
+                var jsonString = System.Text.Encoding.UTF8.GetString(jsonBytes);
+                
+                using var doc = JsonDocument.Parse(jsonString);
+                var root = doc.RootElement;
 
-	// Folosită de Register.razor: returnează (ok, errors)
-	public async Task<(bool ok, List<string> errors)> RegisterAsync(string email, string password, string fullName)
-	{
-		try
-		{
-			var payload = new { email, password, fullName };
-			using var resp = await _http.PostAsJsonAsync("/api/auth/register", payload);
+                // 1. Extragem User ID (cheia 'sub' sau 'nameid')
+                string userId = "";
+                if (root.TryGetProperty("sub", out var sub)) userId = sub.GetString() ?? "";
+                else if (root.TryGetProperty("nameid", out var nid)) userId = nid.GetString() ?? "";
+                
+                // 2. Extragem Email
+                string email = "";
+                if (root.TryGetProperty("email", out var e)) email = e.GetString() ?? "";
+                else if (root.TryGetProperty("unique_name", out var un)) email = un.GetString() ?? "";
 
-			if (!resp.IsSuccessStatusCode)
-			{
-				var errs = await ExtractErrors(resp);
-				return (false, errs);
-			}
+                // 3. Extragem Roluri
+                var roles = new List<string>();
+                string[] roleKeys = { "role", "roles", "http://schemas.microsoft.com/ws/2008/06/identity/claims/role" };
+                
+                foreach (var key in roleKeys)
+                {
+                    if (root.TryGetProperty(key, out var r))
+                    {
+                        if (r.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var item in r.EnumerateArray()) roles.Add(item.GetString()!);
+                        }
+                        else if (r.ValueKind == JsonValueKind.String)
+                        {
+                            roles.Add(r.GetString()!);
+                        }
+                    }
+                }
 
-			var text = await resp.Content.ReadAsStringAsync();
-			var (token, username, roles) = ParseLoginOrRegisterResponse(text);
-
-			// Unele API-uri nu întorc token la register -> caz în care doar anunțăm succes fără token
-			if (!string.IsNullOrWhiteSpace(token))
-				await SaveTokenAsync(token, string.IsNullOrWhiteSpace(username) ? email : username);
-
-			return (true, new());
-		}
-		catch (Exception ex)
-		{
-			return (false, new List<string> { ex.Message });
-		}
-	}
-
-	private async Task<string?> TryReadTokenAsync()
-	{
-		var t = await _storage.GetItemAsync(JwtKey);
-		if (!string.IsNullOrWhiteSpace(t)) return t;
-
-		foreach (var k in FallbackJwtKeys)
-		{
-			t = await _storage.GetItemAsync(k);
-			if (!string.IsNullOrWhiteSpace(t))
-			{
-				await _storage.SetItemAsync(JwtKey, t);
-				return t;
-			}
-		}
-		return null;
-	}
-
-	// În multe backend-uri tokenul vine sub diverse chei: token, accessToken, jwt, data.token etc.
-	private static (string token, string username, List<string> roles) ParseLoginOrRegisterResponse(string json)
-	{
-		try
-		{
-			using var doc = JsonDocument.Parse(json);
-			var root = doc.RootElement;
-
-			string? token = TryFindString(root, ["token", "accessToken", "jwt", "bearerToken"]);
-			if (string.IsNullOrWhiteSpace(token) && root.TryGetProperty("data", out var data))
-			{
-				token = TryFindString(data, ["token", "accessToken", "jwt", "bearerToken"]);
-			}
-
-			string username = TryFindString(root, ["email", "username", "name", "preferred_username", "unique_name"]) ?? "";
-			if (string.IsNullOrWhiteSpace(username) && root.TryGetProperty("data", out var data2))
-			{
-				username = TryFindString(data2, ["email", "username", "name", "preferred_username", "unique_name"]) ?? "";
-			}
-
-			// Unele răspunsuri pot include roluri; dacă nu, le vom extrage din JWT
-			var roles = new List<string>();
-			if (root.TryGetProperty("roles", out var rv))
-			{
-				if (rv.ValueKind == JsonValueKind.Array)
-				{
-					foreach (var x in rv.EnumerateArray())
-						if (x.ValueKind == JsonValueKind.String) roles.Add(x.GetString()!);
-				}
-				else if (rv.ValueKind == JsonValueKind.String)
-				{
-					var s = rv.GetString();
-					if (!string.IsNullOrWhiteSpace(s))
-						roles.AddRange(s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-				}
-			}
-
-			return (token ?? "", username, roles);
-		}
-		catch
-		{
-			return ("", "", new());
-		}
-	}
-
-	private static string? TryFindString(JsonElement root, IEnumerable<string> keys)
-	{
-		foreach (var k in keys)
-		{
-			if (root.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String)
-				return v.GetString();
-		}
-		return null;
-	}
-
-	private static async Task<List<string>> ExtractErrors(HttpResponseMessage resp)
-	{
-		try
-		{
-			var text = await resp.Content.ReadAsStringAsync();
-			using var doc = JsonDocument.Parse(text);
-			var root = doc.RootElement;
-
-			var list = new List<string>();
-
-			// Common formats: { errors: ["a","b"] } sau { message: "..." } sau { error: "..." }
-			if (root.TryGetProperty("errors", out var errs) && errs.ValueKind == JsonValueKind.Array)
-			{
-				foreach (var e in errs.EnumerateArray())
-					if (e.ValueKind == JsonValueKind.String)
-						list.Add(e.GetString()!);
-			}
-			else if (root.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String)
-			{
-				list.Add(m.GetString()!);
-			}
-			else if (root.TryGetProperty("error", out var e2) && e2.ValueKind == JsonValueKind.String)
-			{
-				list.Add(e2.GetString()!);
-			}
-
-			if (list.Count == 0)
-				list.Add($"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}");
-
-			return list;
-		}
-		catch
-		{
-			return new List<string> { $"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}" };
-		}
-	}
-
-	// Decode JWT fără validare, doar pentru a extrage email/roles
-	private static (string username, List<string> roles) ParseJwt(string token)
-	{
-		try
-		{
-			var parts = token.Split('.');
-			if (parts.Length < 2) return ("", new());
-
-			static string FixBase64(string s)
-			{
-				s = s.Replace('-', '+').Replace('_', '/');
-				return s.PadRight(s.Length + (4 - s.Length % 4) % 4, '=');
-			}
-
-			var payloadJson = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(FixBase64(parts[1])));
-			using var doc = JsonDocument.Parse(payloadJson);
-			var root = doc.RootElement;
-
-			// username/email
-			var username = "";
-			string[] emailKeys = { "email", "unique_name", "name", "preferred_username", "sub" };
-			foreach (var k in emailKeys)
-			{
-				if (root.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String)
-				{
-					username = v.GetString() ?? "";
-					if (!string.IsNullOrWhiteSpace(username)) break;
-				}
-			}
-
-			// roles – suport array sau string și diverse chei
-			var roles = new List<string>();
-			string[] roleKeys = {
-				"role", "roles",
-				"http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
-			};
-			foreach (var rk in roleKeys)
-			{
-				if (!root.TryGetProperty(rk, out var rv)) continue;
-
-				if (rv.ValueKind == JsonValueKind.Array)
-				{
-					foreach (var item in rv.EnumerateArray())
-						if (item.ValueKind == JsonValueKind.String)
-							roles.Add(item.GetString()!);
-				}
-				else if (rv.ValueKind == JsonValueKind.String)
-				{
-					var s = rv.GetString();
-					if (!string.IsNullOrWhiteSpace(s))
-					{
-						foreach (var p in s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-							roles.Add(p);
-					}
-				}
-			}
-
-			roles = roles.Select(r => r.Trim()).Where(r => r.Length > 0)
-						 .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-			return (username, roles);
-		}
-		catch
-		{
-			return ("", new());
-		}
-	}
+                return (userId, email, roles);
+            }
+            catch
+            {
+                return ("", "", new List<string>());
+            }
+        }
+    }
 }

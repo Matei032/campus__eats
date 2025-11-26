@@ -11,54 +11,62 @@
 else
 {
     <EditForm Model="@_vm" OnValidSubmit="Save">
-      <div class="row g-3">
-        <div class="col-sm-6">
-          <label class="form-label">Name</label>
-          <InputText class="form-control" @bind-Value="_vm.Name" />
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="row g-3">
+            <div class="col-sm-6">
+                <label class="form-label">Name</label>
+                <InputText class="form-control" @bind-Value="_vm.Name" />
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label">Category</label>
+                <InputText class="form-control" @bind-Value="_vm.Category" />
+            </div>
+            <div class="col-12">
+                <label class="form-label">Description</label>
+                <InputText class="form-control" @bind-Value="_vm.Description" />
+            </div>
+            <div class="col-sm-4">
+                <label class="form-label">Price</label>
+                <InputNumber class="form-control" @bind-Value="_vm.Price" />
+            </div>
+            <div class="col-sm-8">
+                <label class="form-label">Image URL</label>
+                <InputText class="form-control" @bind-Value="_vm.ImageUrl" />
+            </div>
+            
+            <div class="col-sm-6">
+                <label class="form-label">Alergeni (separați prin virgulă)</label>
+                <InputText class="form-control" @bind-Value="_vm.AllergensCsv" placeholder="Ex: Gluten, Lactose" />
+            </div>
+
+            <div class="col-sm-6">
+                <label class="form-label">Dietary Restrictions</label>
+                <InputText class="form-control" @bind-Value="_vm.DietaryRestrictions" placeholder="Ex: Vegan, Vegetarian" />
+            </div>
+
+            <div class="col-sm-6 form-check mt-4">
+                <InputCheckbox class="form-check-input" @bind-Value="_vm.IsAvailable" />
+                <label class="form-check-label ms-2">Available</label>
+            </div>
         </div>
-        <div class="col-sm-6">
-          <label class="form-label">Category</label>
-          <InputText class="form-control" @bind-Value="_vm.Category" />
+
+        <div class="mt-3 d-flex gap-2">
+            <button class="btn btn-danger" type="submit">Save</button>
+            <a class="btn btn-outline-secondary" href="/products-admin">Cancel</a>
         </div>
-        <div class="col-12">
-          <label class="form-label">Description</label>
-          <InputText class="form-control" @bind-Value="_vm.Description" />
-        </div>
-        <div class="col-sm-4">
-          <label class="form-label">Price</label>
-          <InputNumber class="form-control" @bind-Value="_vm.Price" />
-        </div>
-        <div class="col-sm-8">
-          <label class="form-label">Image URL</label>
-          <InputText class="form-control" @bind-Value="_vm.ImageUrl" />
-        </div>
-        <div class="col-12">
-          <label class="form-label">Allergens (comma separated)</label>
-          <InputText class="form-control" @bind-Value="_vm.AllergensCsv" />
-        </div>
-        <div class="col-sm-6">
-          <label class="form-label">Dietary (comma separated)</label>
-          <InputText class="form-control" @bind-Value="_vm.DietaryRestrictions" />
-        </div>
-        <div class="col-sm-6 form-check mt-4">
-          <InputCheckbox class="form-check-input" @bind-Value="_vm.IsAvailable" />
-          <label class="form-check-label ms-2">Available</label>
-        </div>
-      </div>
-      <div class="mt-3 d-flex gap-2">
-        <button class="btn btn-danger" type="submit">Save</button>
-        <a class="btn btn-outline-secondary" href="/products-admin">Cancel</a>
-      </div>
     </EditForm>
 
     @if (_msg is not null)
     {
-        <div class="alert alert-info mt-3">@_msg</div>
+        <div class="alert alert-danger mt-3">@_msg</div>
     }
 }
 
 @code {
     [Parameter] public Guid? Id { get; set; }
+    
     bool _isNew => Id is null;
     bool _loading = true;
     string? _msg;
@@ -68,22 +76,30 @@ else
     {
         if (Id is not null)
         {
-            var p = await Api.GetProductAsync(Id.Value);
-            if (p is not null)
+            try 
             {
-                _vm = new ProductVm
+                var p = await Api.GetProductAsync(Id.Value);
+                if (p is not null)
                 {
-                    Id = p.Id,
-                    Name = p.Name ?? "",
-                    Description = p.Description ?? "",
-                    Price = p.Price,
-                    Category = p.Category ?? "",
-                    ImageUrl = p.ImageUrl,
-                    // LIST -> CSV pentru UI
-                    AllergensCsv = string.Join(", ", p.Allergens ?? new()),
-                    DietaryRestrictions = string.Join(", ", p.DietaryRestrictions ?? new()),
-                    IsAvailable = p.IsAvailable
-                };
+                    _vm = new ProductVm
+                    {
+                        Id = p.Id,
+                        Name = p.Name ?? "",
+                        Description = p.Description ?? "",
+                        Price = p.Price,
+                        Category = p.Category ?? "",
+                        ImageUrl = p.ImageUrl,
+                        // Convertim Lista din backend în String pentru UI (CSV)
+                        AllergensCsv = p.Allergens != null ? string.Join(", ", p.Allergens) : "",
+                        // Dietary e deja string în backend, deci îl luăm direct
+                        DietaryRestrictions = p.DietaryRestrictions ?? "", 
+                        IsAvailable = p.IsAvailable
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                _msg = "Eroare la încărcarea produsului: " + ex.Message;
             }
         }
         _loading = false;
@@ -93,8 +109,8 @@ else
     {
         try
         {
-            var allergensList = _vm.Allergens;                 // CSV -> List<string>
-            var dietaryList = SplitCsv(_vm.DietaryRestrictions); // CSV -> List<string>
+            // Convertim string-ul din UI în Lista pentru Backend
+            var allergensList = SplitCsv(_vm.AllergensCsv);
 
             if (_isNew)
             {
@@ -106,7 +122,7 @@ else
                     Category = _vm.Category,
                     ImageUrl = _vm.ImageUrl,
                     Allergens = allergensList,
-                    DietaryRestrictions = dietaryList,
+                    DietaryRestrictions = _vm.DietaryRestrictions, // Trimitem string simplu
                     IsAvailable = _vm.IsAvailable
                 };
                 await Api.CreateProductAsync(cmd);
@@ -122,17 +138,17 @@ else
                     Category = _vm.Category,
                     ImageUrl = _vm.ImageUrl,
                     Allergens = allergensList,
-                    DietaryRestrictions = dietaryList,
+                    DietaryRestrictions = _vm.DietaryRestrictions, // Trimitem string simplu
                     IsAvailable = _vm.IsAvailable
                 };
                 await Api.UpdateProductAsync(_vm.Id.Value, cmd);
             }
 
-            Nav.NavigateTo("/products-admin");
+            Nav.NavigateTo("/products-admin"); // Sau /menu
         }
         catch (Exception ex)
         {
-            _msg = ex.Message;
+            _msg = "Eroare la salvare: " + ex.Message;
         }
     }
 
@@ -141,6 +157,7 @@ else
            ? new List<string>()
            : csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
+    // ViewModel dedicat pentru formular
     class ProductVm
     {
         public Guid? Id { get; set; }
@@ -149,13 +166,11 @@ else
         public decimal Price { get; set; }
         public string Category { get; set; } = "";
         public string? ImageUrl { get; set; }
-        public string AllergensCsv { get; set; } = "";
+        
+        // Proprietate legată direct de InputText pentru alergeni
+        public string AllergensCsv { get; set; } = ""; 
+        
         public string? DietaryRestrictions { get; set; } = "";
         public bool IsAvailable { get; set; } = true;
-
-        public List<string> Allergens =>
-            string.IsNullOrWhiteSpace(AllergensCsv)
-                ? new List<string>()
-                : AllergensCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
     }
 }

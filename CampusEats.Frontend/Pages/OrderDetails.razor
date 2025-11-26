@@ -38,7 +38,7 @@
         _loading = true;
         try
         {
-            _order = await Api.GetOrderAsync(OrderId, UserId.Value);
+            _order = await Api.GetOrderAsync(OrderId);
         }
         catch (Exception ex)
         {
@@ -60,9 +60,9 @@
 
         try
         {
-            await Api.CancelOrderAsync(OrderId, UserId.Value, "Cancelled from UI");
+            await Api.CancelOrderAsync(OrderId, "Cancelled from UI");
             _msg = "Order cancelled.";
-            _order = await Api.GetOrderAsync(OrderId, UserId.Value);
+            _order = await Api.GetOrderAsync(OrderId);
         }
         catch (Exception ex)
         {

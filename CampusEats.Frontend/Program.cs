@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using Microsoft.AspNetCore.Components.Authorization;
 using CampusEats.Frontend;
 using CampusEats.Frontend.Services;
 using CampusEats.Frontend.State;
@@ -15,6 +16,10 @@ var apiBase = Environment.GetEnvironmentVariable("API_BASE_URL") ?? "http://loca
 builder.Services.AddScoped<AuthState>();
 builder.Services.AddScoped<LocalStorageService>();
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<AuthenticationStateProvider, CustomAuthStateProvider>();
+builder.Services.AddScoped<CartService>();
+builder.Services.AddScoped<CampusEats.Frontend.Services.OrderService>();
+builder.Services.AddAuthorizationCore();
 
 builder.Services.AddTransient<AuthHeaderHandler>();
 builder.Services.AddTransient<DebugAuthHandler>();
@@ -43,6 +48,16 @@ var host = builder.Build();
 
 // Rehidratează token-ul înainte de primul request
 var auth = host.Services.GetRequiredService<AuthService>();
-await auth.InitializeAsync();
+
+try 
+{
+    // Încercăm să rehidratăm utilizatorul, dar nu lăsăm o eroare să oprească tot site-ul
+    await auth.InitializeAsync();
+}
+catch (Exception ex)
+{
+    // Doar scriem eroarea în consolă, dar lăsăm aplicația să continue
+    Console.WriteLine($"[CRITIC] Eroare la inițializarea Auth: {ex.Message}");
+}
 
 await host.RunAsync();

@@ -1,10 +1,38 @@
-<Router AppAssembly="@typeof(App).Assembly">
-    <Found Context="routeData">
-        <RouteView RouteData="@routeData" DefaultLayout="@typeof(Shared.MainLayout)" />
-    </Found>
-    <NotFound>
-        <LayoutView Layout="@typeof(Shared.MainLayout)">
-            <p class="m-3">Sorry, there’s nothing at this address.</p>
-        </LayoutView>
-    </NotFound>
-</Router>
+@using Microsoft.AspNetCore.Components.Authorization
+@using CampusEats.Frontend.Shared
+
+<CascadingAuthenticationState>
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            @* Folosim AuthorizeRouteView pentru a proteja rutele care au [Authorize] *@
+            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+                <NotAuthorized Context="authContext">
+                    @* Ce vede un utilizator neautentificat dacă încearcă să intre unde nu are voie *@
+                    <div class="container mt-5 text-center">
+                        <div class="card shadow-sm mx-auto" style="max-width: 500px;">
+                            <div class="card-body p-5">
+                                <h3 class="card-title text-danger mb-3">Acces Restricționat</h3>
+                                <p class="card-text text-muted mb-4">Trebuie să fii autentificat pentru a accesa această secțiune.</p>
+                                <a href="login" class="btn btn-primary btn-lg w-100">Autentificare</a>
+                                <div class="mt-3">
+                                    <small>Nu ai cont? <a href="register">Înregistrează-te</a></small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <PageTitle>Pagina nu a fost găsită</PageTitle>
+            <LayoutView Layout="@typeof(MainLayout)">
+                <div class="container mt-5 text-center">
+                    <h1 class="display-1 fw-bold text-muted">404</h1>
+                    <p class="lead">Ooops! Pagina pe care o cauți nu există.</p>
+                    <a href="/" class="btn btn-outline-secondary mt-3">Înapoi la meniu</a>
+                </div>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>

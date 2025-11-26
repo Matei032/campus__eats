@@ -1,37 +1,49 @@
 @page "/menu"
-@inject ApiClient Api
-@inject CartService Cart
+@using CampusEats.Frontend.Models
+@using CampusEats.Frontend.Services
+@using System.Text.Json
+@inject HttpClient Http
+@inject CartService CartService
 
-<h3 class="mb-3">Menu</h3>
+<PageTitle>Meniu - CampusEats</PageTitle>
 
-@if (_loading)
-{
-    <p>Loading...</p>
-}
-else if (_error is not null)
-{
-    <div class="alert alert-danger">@_error</div>
-}
-else
-{
-    foreach (var group in _grouped)
+<div class="container mt-4">
+    <h2 class="mb-4 text-center">Meniul Nostru</h2>
+
+    @if (IsLoading)
     {
-        <h5 class="mt-4">@group.Key</h5>
-        <div class="row g-3">
-            @foreach (var p in group)
+        <div class="text-center p-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2">Se încarcă produsele...</p>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(ErrorMessage))
+    {
+        <div class="alert alert-danger text-center">
+            <h4>Eroare de încărcare</h4>
+            <p>@ErrorMessage</p>
+            <button class="btn btn-outline-danger mt-2" @onclick="LoadMenu">Încearcă din nou</button>
+        </div>
+    }
+    else
+    {
+        <div class="row row-cols-1 row-cols-md-3 g-4">
+            @foreach (var product in Products)
             {
-                <div class="col-12 col-sm-6 col-lg-4">
-                    <div class="card h-100">
-                        @if (!string.IsNullOrWhiteSpace(p.ImageUrl))
-                        {
-                            <img class="card-img-top" src="@p.ImageUrl" alt="@p.Name" />
-                        }
-                        <div class="card-body d-flex flex-column">
-                            <h6 class="card-title mb-1">@p.Name</h6>
-                            <p class="text-muted small flex-grow-1">@p.Description</p>
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="fw-bold">@p.Price.ToString("0.00") RON</span>
-                                <button class="btn btn-danger btn-sm" @onclick="() => Add(p)">Add</button>
+                <div class="col">
+                    <div class="card h-100 shadow-sm">
+                        <img src="@product.ImageUrl" class="card-img-top" alt="@product.Name" 
+                             style="height: 200px; object-fit: cover;" 
+                             onerror="this.src='/images/placeholder-food.jpg'"> <div class="card-body d-flex flex-column">
+                            <h5 class="card-title">@product.Name</h5>
+                            <span class="badge bg-info text-dark mb-2" style="width:fit-content">@product.Category</span>
+                            <p class="card-text text-muted small flex-grow-1">@product.Description</p>
+                            
+                            <div class="mt-3 d-flex justify-content-between align-items-center">
+                                <span class="fs-5 fw-bold text-success">@product.Price.ToString("0.00") RON</span>
+                                <button class="btn btn-primary" @onclick="() => AddToCart(product)">
+                                    Adaugă <i class="bi bi-cart-plus"></i>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -39,24 +51,57 @@ else
             }
         </div>
     }
-}
+</div>
 
 @code {
-    List<ProductDto> _products = new();
-    ILookup<string, ProductDto> _grouped = null!;
-    bool _loading = true;
-    string? _error;
+    private List<ProductDto> Products = new();
+    private bool IsLoading = true;
+    private string ErrorMessage = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        try
-        {
-            _products = await Api.GetMenuAsync() ?? new();
-            _grouped = _products.ToLookup(p => string.IsNullOrWhiteSpace(p.Category) ? "Other" : p.Category);
-        }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _loading = false; }
+        await LoadMenu();
     }
 
-    void Add(ProductDto p) => Cart.Add(p);
+    private async Task LoadMenu()
+    {
+        try
+        {
+            IsLoading = true;
+            ErrorMessage = string.Empty;
+
+            // 1. Facem apelul HTTP
+            // Folosim opțiuni pentru a fi siguri că "imageUrl" (JSON) se mapează pe "ImageUrl" (C#)
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+
+            Products = await Http.GetFromJsonAsync<List<ProductDto>>("api/menu", options) ?? new();
+            
+            if (Products.Count == 0)
+            {
+                ErrorMessage = "Nu există produse în meniu.";
+            }
+        }
+        catch (JsonException jsonEx)
+        {
+            Console.WriteLine($"Eroare JSON: {jsonEx.Message}");
+            ErrorMessage = "Datele primite de la server sunt invalide.";
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Eroare Generală: {ex}");
+            ErrorMessage = "Nu s-a putut contacta serverul.";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task AddToCart(ProductDto product)
+    {
+        await CartService.AddToCart(product);
+    }
 }

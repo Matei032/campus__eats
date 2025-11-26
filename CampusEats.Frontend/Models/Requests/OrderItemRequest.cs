@@ -1,18 +1,13 @@
-namespace CampusEats.Frontend.Models.Requests;
+using System;
 
-// ctor (Guid productId, int quantity, string? specialInstructions) � cerut de Cart.razor
-public class OrderItemRequest
+namespace CampusEats.Frontend.Models.Requests
 {
-    public Guid ProductId { get; set; }
-    public int Quantity { get; set; }
-    public string? SpecialInstructions { get; set; }
-
-    public OrderItemRequest() { }
-
-    public OrderItemRequest(Guid productId, int quantity, string? specialInstructions)
+    public class OrderItemRequest
     {
-        ProductId = productId;
-        Quantity = quantity;
-        SpecialInstructions = specialInstructions;
+        public Guid ProductId { get; set; }
+        public int Quantity { get; set; }
+        
+        // IMPORTANT: Backend-ul se așteaptă la "SpecialInstructions", nu la "Notes"
+        public string? SpecialInstructions { get; set; } 
     }
 }

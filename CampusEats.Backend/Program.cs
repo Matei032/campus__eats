@@ -403,9 +403,9 @@ paymentsGroup.MapPost("/process", async (ProcessPayment.Command command, ISender
     .Produces<object>(StatusCodes.Status400BadRequest);
 
 // Istoric plăți pentru user
-paymentsGroup.MapGet("/user/{userId:guid}/history", async (Guid userId, ISender sender, ClaimsPrincipal user) =>
+// Merged endpoint (replace the two duplicates with this single block)
+paymentsGroup.MapGet("/user/{userId:guid}/history", async (Guid userId, int? page, int? pageSize, string? status, string? method, ISender sender, ClaimsPrincipal user) =>
     {
-        // Asigură-te că user-ul are voie (doar propriul istoric sau Staff/Admin)
         var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
         var userRole = user.FindFirst(ClaimTypes.Role)?.Value;
         if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var currentUserId))
@@ -413,14 +413,23 @@ paymentsGroup.MapGet("/user/{userId:guid}/history", async (Guid userId, ISender 
         if (userId != currentUserId && userRole != "Staff" && userRole != "Admin")
             return Results.Forbid();
 
-        var payments = await sender.Send(new GetUserPayments.Query(userId));
-        return Results.Ok(payments);
+        if (page.HasValue && pageSize.HasValue)
+        {
+            var result = await sender.Send(new GetUserPayments.Query(userId, page.Value, pageSize.Value, status, method));
+            return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+        }
+        else
+        {
+            var payments = await sender.Send(new GetUserPayments.Query(userId));
+            return Results.Ok(payments);
+        }
     })
     .WithName("GetUserPaymentHistory")
     .RequireAuthorization()
-    .Produces<List<PaymentDto>>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status401Unauthorized)
     .Produces(StatusCodes.Status403Forbidden);
+
 
 // Istoric plăți pentru o comandă
 paymentsGroup.MapGet("/order/{orderId:guid}", async (Guid orderId, ISender sender, ClaimsPrincipal user) =>
@@ -481,27 +490,6 @@ paymentsGroup.MapPatch("/{paymentId:guid}/refund", async (Guid paymentId, string
     .RequireAuthorization(policy => policy.RequireRole("Staff", "Admin"))
     .Produces<PaymentDto>(StatusCodes.Status200OK)
     .Produces<object>(StatusCodes.Status400BadRequest)
-    .Produces(StatusCodes.Status403Forbidden);
-
-paymentsGroup.MapGet("/user/{userId:guid}/history", async (Guid userId, int page, int pageSize, string? status, string? method, ISender sender, ClaimsPrincipal user) =>
-    {
-        // Restricții securitate (ca înainte)
-        var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
-        var userRole = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
-        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var currentUserId))
-            return Results.Unauthorized();
-        if (userId != currentUserId && userRole != "Staff" && userRole != "Admin")
-            return Results.Forbid();
-
-        var result = await sender.Send(new GetUserPayments.Query(userId, page, pageSize, status, method));
-        return result.IsSuccess
-            ? Results.Ok(result.Value)
-            : Results.BadRequest(new { errors = result.Errors });
-    })
-    .WithName("GetUserPaymentHistory")
-    .RequireAuthorization()
-    .Produces<PagedResult<PaymentDto>>(StatusCodes.Status200OK)
-    .Produces(StatusCodes.Status401Unauthorized)
     .Produces(StatusCodes.Status403Forbidden);
 
 paymentsGroup.MapGet("/", async (int page, int pageSize, string? status, string? method, ISender sender, ClaimsPrincipal user) =>

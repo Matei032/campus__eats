@@ -4,73 +4,96 @@
 @using CampusEats.Frontend.Models
 @inject ApiClient Api
 
+<PageTitle>Inventory Report</PageTitle>
+
 <h3>Inventory – Daily report</h3>
 
-<div class="row g-3 align-items-end mb-3">
+<div class="row g-3 align-items-end mb-4">
     <div class="col-auto">
         <label class="form-label">Report date</label>
-        <InputDate @bind-Value="selectedDate" class="form-control" />
+        <InputDate @bind-Value="CurrentDate" class="form-control" />
     </div>
     <div class="col-auto">
-        <button class="btn btn-primary" @onclick="Load">Load</button>
+        <button class="btn btn-primary" @onclick="Load">Load Report</button>
     </div>
 </div>
 
-@if (loading)
+@if (IsLoading)
 {
-    <div>Loading...</div>
+    <div class="d-flex align-items-center">
+        <div class="spinner-border text-primary me-2" role="status"></div>
+        <span>Loading data...</span>
+    </div>
 }
-else if (!string.IsNullOrWhiteSpace(error))
+else if (!string.IsNullOrWhiteSpace(ErrorMessage))
 {
-    <div class="alert alert-danger">@error</div>
+    <div class="alert alert-danger">@ErrorMessage</div>
 }
-else if (report is null)
+else if (Report is null)
 {
-    <div class="alert alert-info">No report.</div>
+    <div class="alert alert-info">No report loaded. Click "Load" to view data.</div>
 }
 else
 {
-    <div class="row mb-3">
-        <div class="col-auto">
-            <strong>Total orders:</strong> @report.TotalOrdersProcessed
-        </div>
-        <div class="col-auto">
-            <strong>Total items:</strong> @report.TotalItemsSold
-        </div>
-        <div class="col-auto">
-            <strong>Date:</strong> @(report.ReportDate?.ToString("yyyy-MM-dd") ?? "-")
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <div class="row text-center">
+                <div class="col-md-4 border-end">
+                    <h6 class="text-muted">Date</h6>
+                    <p class="fs-5 fw-bold">@(Report.ReportDate?.ToString("yyyy-MM-dd") ?? "-")</p>
+                </div>
+                <div class="col-md-4 border-end">
+                    <h6 class="text-muted">Total Orders</h6>
+                    @* DTO-ul tău folosește TotalOrdersProcessed *@
+                    <p class="fs-5 fw-bold text-primary">@Report.TotalOrdersProcessed</p>
+                </div>
+                <div class="col-md-4">
+                    <h6 class="text-muted">Total Items Sold</h6>
+                    <p class="fs-5 fw-bold text-success">@Report.TotalItemsSold</p>
+                </div>
+            </div>
         </div>
     </div>
 
-    <table class="table table-sm table-striped">
-        <thead>
-            <tr>
-                <th>Product</th>
-                <th class="text-end">Qty</th>
-                <th class="text-end">Unit price</th>
-                <th class="text-end">Subtotal</th>
-            </tr>
-        </thead>
-        <tbody>
-        @foreach (var item in report.InventoryItems)
-        {
-            <tr>
-                <td>@item.ProductName</td>
-                <td class="text-end">@item.QuantitySold</td>
-                <td class="text-end">@item.UnitPrice.ToString("0.00", CultureInfo.InvariantCulture)</td>
-                <td class="text-end">@item.Subtotal.ToString("0.00", CultureInfo.InvariantCulture)</td>
-            </tr>
-        }
-        </tbody>
-    </table>
+    @if (Report.InventoryItems.Any())
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Product Name</th>
+                        <th class="text-end">Quantity</th>
+                        <th class="text-end">Unit Price</th>
+                        <th class="text-end">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Report.InventoryItems)
+                    {
+                        <tr>
+                            <td>@item.ProductName</td>
+                            <td class="text-end fw-bold">@item.QuantitySold</td>
+                            <td class="text-end">@item.UnitPrice.ToString("0.00", CultureInfo.InvariantCulture) RON</td>
+                            <td class="text-end fw-bold">@item.Subtotal.ToString("0.00", CultureInfo.InvariantCulture) RON</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-secondary text-center">No items sold on this date.</div>
+    }
 }
 
 @code {
-    private DateTime? selectedDate = DateTime.Today;
-    private InventoryReportDto? report;
-    private bool loading;
-    private string? error;
+    private DateTime CurrentDate = DateTime.Now;
+    private InventoryReportDto? Report;
+    private bool IsLoading = false;
+    private string ErrorMessage = string.Empty;
 
+    // Încărcăm automat datele la deschiderea paginii
     protected override async Task OnInitializedAsync()
     {
         await Load();
@@ -78,14 +101,31 @@ else
 
     private async Task Load()
     {
-        loading = true;
-        error = null;
-        var result = await Api.GetDailyInventoryAsync(selectedDate);
-        loading = false;
+        try
+        {
+            IsLoading = true;
+            ErrorMessage = string.Empty;
+            Report = null; // Resetăm raportul vechi în timp ce încărcăm
 
-        if (!result.Success)
-            error = string.Join("; ", result.Errors);
-        else
-            report = result.Value!;
+            // ApiClient returnează direct InventoryReportDto sau null
+            var result = await Api.GetDailyInventoryAsync(CurrentDate);
+
+            if (result != null)
+            {
+                Report = result;
+            }
+            else
+            {
+                ErrorMessage = "Nu s-au găsit date pentru data selectată (sau a apărut o eroare în backend).";
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = "Eroare la încărcare: " + ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
     }
 }

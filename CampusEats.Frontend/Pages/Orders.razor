@@ -1,49 +1,122 @@
 @page "/orders"
+@using CampusEats.Frontend.Models
+@using CampusEats.Frontend.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
 @inject ApiClient Api
+@inject AuthenticationStateProvider AuthStateProvider
 
-<h3 class="mb-3">My Orders</h3>
+<PageTitle>Comenzile Mele - CampusEats</PageTitle>
 
-<div class="input-group mb-3">
-  <input class="form-control" placeholder="UserId (GUID)" @bind="_userIdText" />
-  <button class="btn btn-danger" @onclick="Load">Load</button>
+<div class="container mt-4">
+    <h2 class="mb-4">Istoric Comenzi</h2>
+
+    @if (IsLoading)
+    {
+        <div class="text-center mt-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2">Se încarcă istoricul...</p>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(ErrorMessage))
+    {
+        <div class="alert alert-danger">@ErrorMessage</div>
+    }
+    else if (MyOrders.Count == 0)
+    {
+        <div class="alert alert-info text-center p-5">
+            <h4>Nu ai plasat nicio comandă încă.</h4>
+            <a href="menu" class="btn btn-primary mt-3">Vezi Meniul</a>
+        </div>
+    }
+    else
+    {
+        <div class="list-group shadow-sm">
+            @foreach (var order in MyOrders.OrderByDescending(o => o.CreatedAt))
+            {
+                <a href="orders/@order.Id" class="list-group-item list-group-item-action flex-column align-items-start p-4">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1 fw-bold">Comanda #@GetShortId(order.OrderNumber)</h5>
+                        <small class="text-muted">@order.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, HH:mm")</small>
+                    </div>
+                    <div class="d-flex w-100 justify-content-between align-items-center mt-2">
+                        <div>
+                            <p class="mb-1">Total: <strong>@order.TotalAmount.ToString("F2") RON</strong></p>
+                            <small>Items: @order.OrderItems.Sum(i => i.Quantity)</small>
+                        </div>
+                        <span class="badge rounded-pill @GetBadgeClass(order.Status) px-3 py-2">
+                            @order.Status
+                        </span>
+                    </div>
+                </a>
+            }
+        </div>
+    }
 </div>
 
-@if (_loading) { <p>Loading…</p> }
-else if (_error is not null) { <div class="alert alert-danger">@_error</div> }
-else if (!_orders.Any()) { <div class="alert alert-info">No orders.</div> }
-else
-{
-    <div class="list-group">
-      @foreach (var o in _orders)
-      {
-          <a class="list-group-item list-group-item-action" href="order/@o.Id?userId=@_userIdText">
-              <div class="d-flex justify-content-between">
-                <strong>@o.OrderNumber</strong>
-                <span class="badge bg-secondary">@o.Status</span>
-              </div>
-              <div class="small text-muted">@o.CreatedAt:g • @o.TotalAmount.ToString("0.00") RON</div>
-          </a>
-      }
-    </div>
-}
-
 @code {
-    string _userIdText = "";
-    bool _loading;
-    string? _error;
-    List<OrderDto> _orders = new();
+    private List<OrderDto> MyOrders = new();
+    private bool IsLoading = true;
+    private string ErrorMessage = string.Empty;
 
-    async Task Load()
+    protected override async Task OnInitializedAsync()
     {
-        _error = null;
-        if (!Guid.TryParse(_userIdText, out var userId))
-        {
-            _error = "Invalid UserId";
-            return;
-        }
-        _loading = true;
-        try { _orders = await Api.GetUserOrdersAsync(userId) ?? new(); }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _loading = false; }
+        await LoadOrders();
     }
+
+    private async Task LoadOrders()
+    {
+        try
+        {
+            IsLoading = true;
+            
+            // 1. Obținem utilizatorul curent
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user.Identity?.IsAuthenticated != true)
+            {
+                ErrorMessage = "Trebuie să te autentifici.";
+                IsLoading = false;
+                return;
+            }
+
+            // 2. Extragem UserId (exact ca în Cart.razor)
+            var userIdClaim = user.FindFirst(c => c.Type == "sub") ?? 
+                              user.FindFirst(c => c.Type == ClaimTypes.NameIdentifier);
+
+            if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out Guid userId))
+            {
+                // 3. Cerem comenzile de la API
+                MyOrders = await Api.GetUserOrdersAsync(userId);
+            }
+            else
+            {
+                ErrorMessage = "Nu am putut identifica utilizatorul.";
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = "Eroare la încărcare: " + ex.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private string GetShortId(string orderNumber)
+    {
+        if (string.IsNullOrEmpty(orderNumber)) return "";
+        return orderNumber.Length > 8 ? orderNumber.Substring(orderNumber.Length - 8) : orderNumber;
+    }
+
+    private string GetBadgeClass(string status) => status switch
+    {
+        "Pending" => "bg-warning text-dark",
+        "Preparing" => "bg-primary",
+        "Ready" => "bg-success",
+        "Completed" => "bg-secondary",
+        _ => "bg-light text-dark border"
+    };
 }

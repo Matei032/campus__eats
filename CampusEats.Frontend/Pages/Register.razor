@@ -1,99 +1,108 @@
 ﻿@page "/register"
-@using System.ComponentModel.DataAnnotations
-@inject NavigationManager Nav
-@inject CampusEats.Frontend.Features.Auth.AuthService Auth
+@inject AuthService AuthService
+@inject NavigationManager NavigationManager
+@using CampusEats.Frontend.Models.Auth
 
-<h3>Create account</h3>
+<h3>Înregistrare Cont Nou</h3>
 
-@if (_errors.Count > 0)
-{
-    <div class="alert alert-danger">
-        <ul class="mb-0">
-            @foreach (var e in _errors)
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <EditForm Model="@RegisterModel" OnValidSubmit="@HandleRegister">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="mb-3">
+                <label>Nume Complet</label>
+                <InputText @bind-Value="RegisterModel.FullName" class="form-control" placeholder="Ion Popescu" />
+            </div>
+
+            <div class="mb-3">
+                <label>Email</label>
+                <InputText @bind-Value="RegisterModel.Email" class="form-control" placeholder="ion@student.tuiasi.ro" />
+            </div>
+
+            <div class="mb-3">
+                <label>Număr Telefon</label>
+                <InputText @bind-Value="RegisterModel.PhoneNumber" class="form-control" />
+            </div>
+
+            <div class="mb-3">
+                <label>ID Student (Opțional)</label>
+                <InputText @bind-Value="RegisterModel.StudentId" class="form-control" />
+            </div>
+
+            <div class="mb-3">
+                <label>Parolă</label>
+                <InputText @bind-Value="RegisterModel.Password" type="password" class="form-control" />
+            </div>
+            
+            @if (!string.IsNullOrEmpty(SuccessMessage))
             {
-                <li>@e</li>
+                <div class="alert alert-success text-center">
+                    <i class="bi bi-check-circle-fill me-2"></i> @SuccessMessage
+                </div>
             }
-        </ul>
-    </div>
-}
+            
+            @if (!string.IsNullOrEmpty(ErrorMessage))
+            {
+                <div class="alert alert-danger">@ErrorMessage</div>
+            }
 
-<EditForm Model="_model" OnValidSubmit="OnSubmit">
-    <DataAnnotationsValidator />
-    <div class="mb-3">
-        <label class="form-label">Full name</label>
-        <InputText class="form-control" @bind-Value="_model.FullName" />
-        <ValidationMessage For="@(() => _model.FullName)" />
+            <button type="submit" class="btn btn-primary w-100" disabled="@IsLoading">
+                @(IsLoading ? "Se creează contul..." : "Înregistrează-te")
+            </button>
+        </EditForm>
     </div>
-    <div class="mb-3">
-        <label class="form-label">Email</label>
-        <InputText class="form-control" @bind-Value="_model.Email" />
-        <ValidationMessage For="@(() => _model.Email)" />
-    </div>
-    <div class="mb-3">
-        <label class="form-label">Password</label>
-        <InputText type="password" class="form-control" @bind-Value="_model.Password" />
-        <ValidationMessage For="@(() => _model.Password)" />
-    </div>
-    <div class="mb-3">
-        <label class="form-label">Confirm password</label>
-        <InputText type="password" class="form-control" @bind-Value="_model.ConfirmPassword" />
-        <ValidationMessage For="@(() => _model.ConfirmPassword)" />
-    </div>
-
-    <button class="btn btn-danger" disabled="@_busy">
-        @(_busy ? "Creating..." : "Create account")
-    </button>
-</EditForm>
+</div>
 
 @code {
-    private readonly RegisterModel _model = new();
-    private readonly List<string> _errors = new();
-    private bool _busy;
+    private RegisterRequest RegisterModel = new RegisterRequest();
+    private bool IsLoading = false;
+    private string ErrorMessage = string.Empty;
+    private string SuccessMessage = string.Empty; // <--- Variabilă nouă
 
-    private async Task OnSubmit()
+    private async Task HandleRegister()
     {
-        _errors.Clear();
+        IsLoading = true;
+        ErrorMessage = string.Empty;
+        SuccessMessage = string.Empty;
 
-        if (_model.Password != _model.ConfirmPassword)
+        // Validare simplă
+        if (string.IsNullOrWhiteSpace(RegisterModel.FullName) || 
+            string.IsNullOrWhiteSpace(RegisterModel.Email) || 
+            string.IsNullOrWhiteSpace(RegisterModel.Password))
         {
-            _errors.Add("Passwords do not match.");
+            ErrorMessage = "Te rog completează toate câmpurile obligatorii.";
+            IsLoading = false;
             return;
         }
 
-        _busy = true;
-        try
+        var (success, errors) = await AuthService.RegisterAsync(RegisterModel);
+
+        if (success)
         {
-            // IMPORTANT: 3 argumente (email, password, fullName)
-            var (ok, errs) = await Auth.RegisterAsync(_model.Email, _model.Password, _model.FullName);
-            if (!ok)
+            // 1. Afișăm mesajul de succes
+            SuccessMessage = "Contul a fost creat cu succes! Te redirecționăm...";
+            StateHasChanged(); // Forțăm actualizarea interfeței
+            
+            // 2. Așteptăm 2 secunde
+            await Task.Delay(2000);
+
+            // 3. Redirecționăm la Login
+            NavigationManager.NavigateTo("/login");
+        }
+        else
+        {
+            if (errors.Any())
             {
-                _errors.AddRange(errs);
-                return;
+                ErrorMessage = string.Join(", ", errors);
             }
-
-            // Dacă backend-ul nu întoarce token la register, vei fi considerat neautentificat după register.
-            // Poți redirecționa la /login sau la home. Alege una:
-            Nav.NavigateTo("/");
-            // Nav.NavigateTo("/login");
+            else
+            {
+                ErrorMessage = "A apărut o eroare la înregistrare.";
+            }
         }
-        finally
-        {
-            _busy = false;
-        }
-    }
 
-    public class RegisterModel
-    {
-        [Required, StringLength(100)]
-        public string FullName { get; set; } = string.Empty;
-
-        [Required, EmailAddress, StringLength(100)]
-        public string Email { get; set; } = string.Empty;
-
-        [Required, StringLength(100, MinimumLength = 6)]
-        public string Password { get; set; } = string.Empty;
-
-        [Required, StringLength(100, MinimumLength = 6)]
-        public string ConfirmPassword { get; set; } = string.Empty;
+        IsLoading = false;
     }
 }
