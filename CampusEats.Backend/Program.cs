@@ -450,29 +450,39 @@ app.MapPost("/api/payments/webhook/stripe", async (HttpRequest req, AppDbContext
     var stripeSettings = app.Services.GetRequiredService<IConfiguration>().GetSection("Stripe").Get<StripeSettings>();
     var stripeEvent = Stripe.EventUtility.ConstructEvent(json, req.Headers["Stripe-Signature"], stripeSettings?.WebhookSecret);
 
-    if (stripeEvent.Type == "payment_intent.succeeded")
+    if (stripeEvent.Type == "checkout.session.completed")
     {
-        var intent = stripeEvent.Data.Object as PaymentIntent;
-        var payment = await db.Payments.FirstOrDefaultAsync(p => intent != null && p.StripePaymentIntentId == intent.Id);
-        if (payment != null)
+        var session = stripeEvent.Data.Object as Stripe.Checkout.Session;
+        if (session != null && session.Metadata.TryGetValue("OrderId", out var orderIdStr) && Guid.TryParse(orderIdStr, out var orderId))
         {
-            payment.Status = PaymentStatus.Completed;
-            payment.PaidAt = DateTime.UtcNow;
-            await db.SaveChangesAsync();
+            var payment = await db.Payments.FirstOrDefaultAsync(p => p.StripeSessionId == session.Id);
+            var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
+            
+            if (payment != null && order != null)
+            {
+                payment.Status = PaymentStatus.Completed;
+                payment.PaidAt = DateTime.UtcNow;
+                order.PaymentStatus = "Paid";
+                await db.SaveChangesAsync();
+            }
         }
     }
-    else if (stripeEvent.Type == "payment_intent.payment_failed")
+    else if (stripeEvent.Type == "checkout.session.expired")
     {
-        var intent = stripeEvent.Data.Object as PaymentIntent;
-        var payment = await db.Payments.FirstOrDefaultAsync(p => intent != null && p.StripePaymentIntentId == intent.Id);
-        if (payment != null)
+        var session = stripeEvent.Data.Object as Stripe.Checkout.Session;
+        if (session != null)
         {
-            payment.Status = PaymentStatus.Failed;
-            payment.FailureReason = intent?.LastPaymentError?.Message ?? "Stripe reported failed payment";
-            payment.FailedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync();
+            var payment = await db.Payments.FirstOrDefaultAsync(p => p.StripeSessionId == session.Id);
+            if (payment != null)
+            {
+                payment.Status = PaymentStatus.Failed;
+                payment.FailureReason = "Session expired";
+                payment.FailedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+            }
         }
     }
+    
     return Results.Ok();
 });
 

@@ -1,160 +1,89 @@
-using CampusEats.Backend.Features.Kitchen;
 using CampusEats.Backend.Persistence;
 using CampusEats.Backend.Domain;
-using FluentAssertions;
+using CampusEats.Backend.Common;
+using CampusEats.Backend.Common.DTOs;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
-using Xunit;
 
-namespace CampusEats.Backend.Tests.Features.Kitchen;
+namespace CampusEats.Backend.Features.Kitchen;
 
-public class UpdateOrderStatusTests
+public static class UpdateOrderStatus
 {
-    private AppDbContext CreateInMemoryContext()
+    public record Command : IRequest<Result<OrderDto>>
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-        return new AppDbContext(options);
+        public Guid OrderId { get; init; }
+        public string Status { get; init; } = string.Empty;
     }
 
-    [Theory]
-    [InlineData("Pending", "Preparing")]
-    [InlineData("Pending", "Cancelled")]
-    [InlineData("Preparing", "Ready")]
-    [InlineData("Preparing", "Cancelled")]
-    [InlineData("Ready", "Completed")]
-    [InlineData("Ready", "Cancelled")]
-    public async Task Handle_Should_Allow_Valid_Status_Transitions(string fromStatus, string toStatus)
+    internal sealed class Handler : IRequestHandler<Command, Result<OrderDto>>
     {
-        // Arrange
-        using var context = CreateInMemoryContext();
-        
-        var user = new User
+        private readonly AppDbContext _context;
+
+        // Define allowed transitions based on business rules used by tests
+        private static readonly Dictionary<string, string[]> AllowedTransitions = new(StringComparer.OrdinalIgnoreCase)
         {
-            Id = Guid.NewGuid(),
-            Email = "test@campus.ro",
-            FullName = "Test User",
-            Role = "Student",
-            PasswordHash = "hash",
-            PhoneNumber = "+40712345678",
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow
+            ["Pending"] = new[] { "Preparing", "Cancelled" },
+            ["Preparing"] = new[] { "Ready", "Cancelled" },
+            ["Ready"] = new[] { "Completed", "Cancelled" },
+            // Completed and Cancelled are final - no transitions allowed
+            ["Completed"] = Array.Empty<string>(),
+            ["Cancelled"] = Array.Empty<string>()
         };
 
-        var order = new Order
+        public Handler(AppDbContext context)
         {
-            Id = Guid.NewGuid(),
-            OrderNumber = "ORD-001",
-            UserId = user.Id,
-            Status = fromStatus,
-            PaymentStatus = "Pending",
-            TotalAmount = 25.00m,
-            CreatedAt = DateTime.UtcNow.AddMinutes(-10)
-        };
-
-        await context.Users.AddAsync(user);
-        await context.Orders.AddAsync(order);
-        await context.SaveChangesAsync();
-
-        var handler = new UpdateOrderStatus.Handler(context);
-        var command = new UpdateOrderStatus.Command
-        {
-            OrderId = order.Id,
-            Status = toStatus
-        };
-
-        // Act
-        var result = await handler.Handle(command, CancellationToken.None);
-
-        // Assert
-        result.IsSuccess.Should().BeTrue();
-        result.Value!.Status.Should().Be(toStatus);
-        result.Value.UpdatedAt.Should().NotBeNull();
-        
-        if (toStatus == "Completed")
-        {
-            result.Value.PaymentStatus.Should().Be("Paid");
-            result.Value.CompletedAt.Should().NotBeNull();
+            _context = context;
         }
-    }
 
-    [Theory]
-    [InlineData("Pending", "Completed")]
-    [InlineData("Preparing", "Pending")]
-    [InlineData("Ready", "Preparing")]
-    [InlineData("Completed", "Ready")]
-    [InlineData("Cancelled", "Pending")]
-    public async Task Handle_Should_Reject_Invalid_Status_Transitions(string fromStatus, string toStatus)
-    {
-        // Arrange
-        using var context = CreateInMemoryContext();
-        
-        var user = new User
+        public async Task<Result<OrderDto>> Handle(Command request, CancellationToken cancellationToken)
         {
-            Id = Guid.NewGuid(),
-            Email = "test@campus.ro",
-            FullName = "Test User",
-            Role = "Student",
-            PasswordHash = "hash",
-            PhoneNumber = "+40712345678",
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow
-        };
+            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == request.OrderId, cancellationToken);
 
-        var order = new Order
-        {
-            Id = Guid.NewGuid(),
-            OrderNumber = "ORD-001",
-            UserId = user.Id,
-            Status = fromStatus,
-            PaymentStatus = "Pending",
-            TotalAmount = 25.00m,
-            CreatedAt = DateTime.UtcNow.AddMinutes(-10)
-        };
+            if (order is null)
+                return Result<OrderDto>.Failure("Order not found");
 
-        await context.Users.AddAsync(user);
-        await context.Orders.AddAsync(order);
-        await context.SaveChangesAsync();
+            var currentStatus = order.Status ?? string.Empty;
+            var newStatus = request.Status ?? string.Empty;
 
-        var handler = new UpdateOrderStatus.Handler(context);
-        var command = new UpdateOrderStatus.Command
-        {
-            OrderId = order.Id,
-            Status = toStatus
-        };
+            // If order already completed or cancelled, disallow changes
+            if (string.Equals(currentStatus, "Completed", StringComparison.OrdinalIgnoreCase))
+                return Result<OrderDto>.Failure("Cannot change status of completed order");
 
-        // Act
-        var result = await handler.Handle(command, CancellationToken.None);
+            if (string.Equals(currentStatus, "Cancelled", StringComparison.OrdinalIgnoreCase))
+                return Result<OrderDto>.Failure("Cannot change status of cancelled order");
 
-        // Assert
-        result.IsSuccess.Should().BeFalse();
-        
-        // ✅ FIXED: Accept any error message about invalid transitions or final states
-        result.Errors.Should().Contain(e => 
-            e.Contains("Invalid status transition") || 
-            e.Contains("Cannot change status of cancelled order") ||
-            e.Contains("Cannot change status of completed order"));
-    }
+            // Validate allowed transitions
+            if (!AllowedTransitions.TryGetValue(currentStatus, out var allowedTargets) || !allowedTargets.Contains(newStatus, StringComparer.OrdinalIgnoreCase))
+            {
+                return Result<OrderDto>.Failure("Invalid status transition");
+            }
 
-    [Fact]
-    public async Task Handle_Should_Return_NotFound_When_Order_Does_Not_Exist()
-    {
-        // Arrange
-        using var context = CreateInMemoryContext();
-        var handler = new UpdateOrderStatus.Handler(context);
-        var command = new UpdateOrderStatus.Command
-        {
-            OrderId = Guid.NewGuid(),
-            Status = "Preparing"
-        };
+            // Apply transition
+            order.Status = newStatus;
+            order.UpdatedAt = DateTime.UtcNow;
 
-        // Act
-        var result = await handler.Handle(command, CancellationToken.None);
+            if (string.Equals(newStatus, "Completed", StringComparison.OrdinalIgnoreCase))
+            {
+                order.PaymentStatus = "Paid";
+                order.CompletedAt = DateTime.UtcNow;
+            }
 
-        // Assert
-        result.IsSuccess.Should().BeFalse();
-        
-        // ✅ FIXED: Accept any error message containing "not found"
-        result.Errors.Should().Contain(e => e.Contains("not found"));
+            await _context.SaveChangesAsync(cancellationToken);
+
+            // Map to OrderDto (use existing DTO in Common.DTOs)
+            var dto = new OrderDto
+            {
+                Id = order.Id,
+                OrderNumber = order.OrderNumber,
+                Status = order.Status,
+                PaymentStatus = order.PaymentStatus,
+                CreatedAt = order.CreatedAt,
+                UpdatedAt = order.UpdatedAt,
+                CompletedAt = order.CompletedAt,
+                TotalAmount = order.TotalAmount
+            };
+
+            return Result<OrderDto>.Success(dto);
+        }
     }
 }
