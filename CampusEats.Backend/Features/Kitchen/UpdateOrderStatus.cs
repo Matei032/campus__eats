@@ -1,8 +1,9 @@
-using CampusEats.Backend.Common;
+﻿using CampusEats.Backend.Common;
 using CampusEats.Backend.Common.DTOs;
 using CampusEats.Backend.Persistence;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using CampusEats.Backend.Domain;
 
 namespace CampusEats.Backend.Features.Kitchen;
 
@@ -36,6 +37,7 @@ public static class UpdateOrderStatus
             }
 
             // --- LOGICA DE STATUS ---
+            var wasCompleted = order.Status == "Completed"; // Verificăm dacă era deja completată
             order.Status = request.Status;
             order.UpdatedAt = DateTime.UtcNow;
 
@@ -43,6 +45,32 @@ public static class UpdateOrderStatus
             {
                 order.CompletedAt = DateTime.UtcNow;
                 if (order.PaymentStatus == "Pending") order.PaymentStatus = "Paid";
+
+                // 🎁 ACORDĂ PUNCTE LOYALTY AUTOMAT (doar prima dată când devine Completed)
+                if (!wasCompleted)
+                {
+                    // 1 RON = 10 puncte loyalty
+                    var pointsToAward = (int)(order.TotalAmount * 10);
+
+                    var user = await _context.Users.FindAsync(new object[] { order.UserId }, cancellationToken);
+                    if (user != null)
+                    {
+                        user.LoyaltyPoints += pointsToAward;
+                        user.UpdatedAt = DateTime.UtcNow;
+
+                        var loyaltyTransaction = new LoyaltyTransaction
+                        {
+                            Id = Guid.NewGuid(),
+                            UserId = user.Id,
+                            PointsChange = pointsToAward,
+                            Type = LoyaltyTransactionType.Earned,
+                            Description = $"Earned {pointsToAward} points from order #{order.OrderNumber}",
+                            OrderId = order.Id,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        _context.LoyaltyTransactions.Add(loyaltyTransaction);
+                    }
+                }
             }
             // ------------------------
 

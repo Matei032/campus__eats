@@ -11,6 +11,7 @@ using CampusEats.Backend.Features.Menu;
 using CampusEats.Backend.Features.Orders;
 using CampusEats.Backend.Features.Payments;
 using CampusEats.Backend.Persistence;
+using CampusEats.Backend.Features.Loyalty;
 using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -508,5 +509,77 @@ paymentsGroup.MapGet("/", async (int page, int pageSize, string? status, string?
     .RequireAuthorization(policy => policy.RequireRole("Staff", "Admin"))
     .Produces<PagedResult<PaymentDto>>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status403Forbidden);
+
+// ================== LOYALTY ENDPOINTS ==================
+var loyaltyGroup = app.MapGroup("api/loyalty").WithTags("Loyalty");
+
+// Obține punctele curente ale user-ului
+loyaltyGroup.MapGet("/points", async (ClaimsPrincipal user, ISender sender) =>
+{
+    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
+    if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        return Results.Unauthorized();
+
+    var result = await sender.Send(new GetLoyaltyPoints.Query(userId));
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+})
+.WithName("GetLoyaltyPoints")
+.RequireAuthorization()
+.Produces<LoyaltyPointsDto>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status401Unauthorized)
+.Produces<object>(StatusCodes.Status400BadRequest);
+
+// Istoric tranzacții loyalty
+loyaltyGroup.MapGet("/transactions", async (ClaimsPrincipal user, int page, int pageSize, ISender sender) =>
+{
+    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
+    if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        return Results.Unauthorized();
+
+    var result = await sender.Send(new GetLoyaltyTransactions.Query(userId, page, pageSize));
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+})
+.WithName("GetLoyaltyTransactions")
+.RequireAuthorization()
+.Produces<List<LoyaltyTransactionDto>>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status401Unauthorized)
+.Produces<object>(StatusCodes.Status400BadRequest);
+
+// Redeem puncte pentru discount
+loyaltyGroup.MapPost("/redeem", async (RedeemLoyaltyPoints.Command command, ClaimsPrincipal user, ISender sender) =>
+{
+    var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
+    if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var authenticatedUserId))
+        return Results.Unauthorized();
+
+    // User poate redeem doar pentru propriul său cont
+    if (command.UserId != authenticatedUserId)
+        return Results.Forbid();
+
+    var result = await sender.Send(command);
+    return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(new { errors = result.Errors });
+})
+.WithName("RedeemLoyaltyPoints")
+.RequireAuthorization()
+.Produces<RedeemPointsResultDto>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status401Unauthorized)
+.Produces(StatusCodes.Status403Forbidden)
+.Produces<object>(StatusCodes.Status400BadRequest);
+
+// Award points (doar Admin/Staff)
+loyaltyGroup.MapPost("/award", async (AwardLoyaltyPoints.Command command, ClaimsPrincipal user, ISender sender) =>
+{
+    var userRole = user.FindFirst(ClaimTypes.Role)?.Value;
+    if (userRole != "Staff" && userRole != "Admin")
+        return Results.Forbid();
+
+    var result = await sender.Send(command);
+    return result.IsSuccess ? Results.Ok(new { message = "Points awarded successfully" }) : Results.BadRequest(new { errors = result.Errors });
+})
+.WithName("AwardLoyaltyPoints")
+.RequireAuthorization(policy => policy.RequireRole("Staff", "Admin"))
+.Produces<object>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status403Forbidden)
+.Produces<object>(StatusCodes.Status400BadRequest);
 
 app.Run();
