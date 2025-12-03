@@ -132,5 +132,70 @@ namespace CampusEats.Frontend.Services
             }
             return await _httpClient.GetFromJsonAsync<InventoryReportDto>(url);
         }
+        
+        // ================== PAYMENTS ==================
+
+        public async Task<PaymentDto?> ProcessPaymentAsync(ProcessPaymentRequest request)
+        {
+            try
+            {
+                var response = await _httpClient.PostAsJsonAsync("api/payments/process", request);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    return await response.Content.ReadFromJsonAsync<PaymentDto>();
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"Payment API Error: {response.StatusCode} - {errorContent}");
+                throw new HttpRequestException($"Payment failed: {response.StatusCode}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Exception in ProcessPaymentAsync: {ex.Message}");
+                throw;
+            }
+        }
+
+        public async Task<List<PaymentDto>> GetUserPaymentHistoryAsync(Guid userId)
+        {
+            try
+            {
+                return await _httpClient.GetFromJsonAsync<List<PaymentDto>>($"api/payments/user/{userId}/history") 
+                       ?? new List<PaymentDto>();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error fetching payment history: {ex.Message}");
+                return new List<PaymentDto>();
+            }
+        }
+
+        public async Task<List<PaymentDto>> GetOrderPaymentsAsync(Guid orderId)
+        {
+            try
+            {
+                return await _httpClient.GetFromJsonAsync<List<PaymentDto>>($"api/payments/order/{orderId}") 
+                       ?? new List<PaymentDto>();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error fetching order payments: {ex.Message}");
+                return new List<PaymentDto>();
+            }
+        }
+
+        // Adaugă această metodă pentru Checkout.razor
+        public async Task<OrderDto?> GetOrderByIdAsync(Guid orderId)
+        {
+            try
+            {
+                return await _httpClient.GetFromJsonAsync<OrderDto>($"api/orders/{orderId}");
+            }
+            catch
+            {
+                return null;
+            }
+        }
     }
 }

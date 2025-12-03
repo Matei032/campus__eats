@@ -1,0 +1,80 @@
+﻿@page "/checkout/success"
+@using CampusEats.Frontend.Services
+@using CampusEats.Frontend.Models
+@inject NavigationManager Navigation
+@inject ApiClient Api
+
+<PageTitle>Plată Reușită!</PageTitle>
+
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 text-center">
+            @if (isLoading)
+            {
+                <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
+                <p>Se verifică plata...</p>
+            }
+            else
+            {
+                <i class="bi bi-check-circle-fill text-success" style="font-size: 5rem;"></i>
+                <h2 class="mt-4">Plată Reușită!</h2>
+                <p class="lead">Comanda ta a fost procesată cu succes.</p>
+                
+                @if (order != null)
+                {
+                    <div class="alert alert-info mt-3">
+                        <strong>Comandă:</strong> #@order.OrderNumber<br/>
+                        <strong>Total:</strong> @order.TotalAmount.ToString("F2") RON
+                    </div>
+                }
+                
+                <button class="btn btn-primary mt-3" @onclick="GoToOrders">
+                    Vezi Comenzile Mele
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isLoading = true;
+    private OrderDto? order;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var orderIdStr = GetQueryParam(uri.Query, "order_id");
+
+        if (!string.IsNullOrEmpty(orderIdStr) && Guid.TryParse(orderIdStr, out var orderId))
+        {
+            try
+            {
+                order = await Api.GetOrderByIdAsync(orderId);
+            }
+            catch { }
+        }
+
+        isLoading = false;
+    }
+
+    private string? GetQueryParam(string query, string key)
+    {
+        if (string.IsNullOrEmpty(query)) return null;
+        
+        var pairs = query.TrimStart('?').Split('&');
+        foreach (var pair in pairs)
+        {
+            var parts = pair.Split('=');
+            if (parts.Length == 2 && parts[0] == key)
+            {
+                return Uri.UnescapeDataString(parts[1]);
+            }
+        }
+        return null;
+    }
+
+    private void GoToOrders()
+    {
+        Navigation.NavigateTo("/orders");
+    }
+}

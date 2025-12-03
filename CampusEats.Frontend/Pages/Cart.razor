@@ -69,10 +69,17 @@
                         <div class="mb-3">
                             <label class="form-label">Metodă Plată</label>
                             <select class="form-select" @bind="PaymentMethod">
-                                <option value="Cash">Cash la livrare</option>
-                                <option value="Card">Card (Online/Terminal)</option>
+                                <option value="Cash">Cash la ridicare</option>
+                                <option value="Card">Card (Stripe)</option>
                             </select>
                         </div>
+
+                        @if (PaymentMethod == "Card")
+                        {
+                            <div class="alert alert-info small mb-3">
+                                <i class="bi bi-info-circle"></i> Vei fi redirecționat către pagina securizată Stripe pentru plată.
+                            </div>
+                        }
 
                         <div class="mb-3">
                             <label class="form-label">Observații (Opțional)</label>
@@ -92,7 +99,14 @@
                             }
                             else
                             {
-                                <span>Finalizează Comanda</span>
+                                @if (PaymentMethod == "Card")
+                                {
+                                    <span><i class="bi bi-credit-card me-2"></i>Continuă la Plată</span>
+                                }
+                                else
+                                {
+                                    <span>Finalizează Comanda</span>
+                                }
                             }
                         </button>
                     </div>
@@ -111,8 +125,6 @@
     protected override async Task OnInitializedAsync()
     {
         CartService.OnChange += StateHasChanged;
-        // Sincronizăm prețurile cu serverul (dacă metoda există în CartService)
-        // await RefreshPrices(); 
     }
 
     public void Dispose()
@@ -144,7 +156,7 @@
             return;
         }
 
-        // 2. Extragem ID-ul utilizatorului (Esențial pentru Backend)
+        // 2. Extragem ID-ul utilizatorului
         var userIdClaim = user.FindFirst(c => c.Type == "sub") ?? 
                           user.FindFirst(c => c.Type == ClaimTypes.NameIdentifier);
         
@@ -155,50 +167,44 @@
             return;
         }
 
-        // 3. Construim obiectul comenzii
+        // 3. Construim comanda
         var command = new CreateOrderCommand
         {
             UserId = userId,
-            PaymentMethod = PaymentMethod, // "Cash" sau "Card"
+            PaymentMethod = PaymentMethod,
             Notes = OrderNotes,
             Items = CartService.Items.Select(i => new OrderItemRequest
             {
                 ProductId = i.ProductId,
                 Quantity = i.Quantity,
-                SpecialInstructions = "" // Poți adăuga câmp în UI per produs
+                SpecialInstructions = ""
             }).ToList()
         };
 
         try 
         {
-            // 4. LOGICA DE PLATĂ
+            // 4. Creăm comanda în backend
+            var order = await Api.CreateOrderAsync(command);
+            
+            if (order == null)
+            {
+                ErrorMessage = "Nu am putut plasa comanda. Verifică consola pentru detalii.";
+                IsProcessing = false;
+                return;
+            }
+
+            // 5. LOGICA DIFERITĂ PE METODĂ DE PLATĂ
             if (PaymentMethod == "Cash")
             {
-                // Pentru Cash, trimitem comanda direct
-                var order = await Api.CreateOrderAsync(command);
-                
-                if (order != null)
-                {
-                    await CartService.Clear();
-                    NavigationManager.NavigateTo("/orders"); // Sau o pagină de succes
-                }
-                else
-                {
-                    ErrorMessage = "Nu am putut plasa comanda. Verifică consola pentru detalii.";
-                }
+                // Cash: Comanda e gata, golim coșul și redirecționăm
+                await CartService.Clear();
+                NavigationManager.NavigateTo("/orders");
             }
             else if (PaymentMethod == "Card")
             {
-                // Aici vei pune logica de Stripe (redirecționare sau componentă)
-                // Deocamdată, simulăm plasarea comenzii ca "Pending Payment"
-                var order = await Api.CreateOrderAsync(command);
-                if (order != null)
-                {
-                    await CartService.Clear();
-                    // Redirecționare către pagina de plată (dacă ai implementat-o)
-                    // NavigationManager.NavigateTo($"/payment/{order.Id}");
-                    NavigationManager.NavigateTo("/orders");
-                }
+                // Card: Golim coșul și redirecționăm la checkout Stripe
+                await CartService.Clear();
+                NavigationManager.NavigateTo($"/checkout/{order.Id}");
             }
         }
         catch (Exception ex)

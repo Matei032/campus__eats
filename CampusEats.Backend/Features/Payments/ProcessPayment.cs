@@ -70,57 +70,74 @@ public static class ProcessPayment
             };
 
             if (method == PaymentMethod.Card)
+{
+    // Creăm Stripe Checkout Session (nu PaymentIntent)
+    var sessionOptions = new Stripe.Checkout.SessionCreateOptions
+    {
+        PaymentMethodTypes = new List<string> { "card" },
+        Mode = "payment",
+        LineItems = new List<Stripe.Checkout.SessionLineItemOptions>
+        {
+            new Stripe.Checkout.SessionLineItemOptions
             {
-                var intentOptions = new PaymentIntentCreateOptions
+                PriceData = new Stripe.Checkout.SessionLineItemPriceDataOptions
                 {
-                    Amount = (long)(request.Amount * 100),
                     Currency = "ron",
-                    Description = $"CampusEats Order #{order.OrderNumber}",
-                    Metadata = new Dictionary<string, string>
+                    ProductData = new Stripe.Checkout.SessionLineItemPriceDataProductDataOptions
                     {
-                        ["OrderId"] = order.Id.ToString(),
-                        ["UserId"] = order.UserId.ToString()
-                    }
-                };
-                var intentService = new PaymentIntentService(_stripeClient);
-
-                try
-                {
-                    var intent = await intentService.CreateAsync(intentOptions, cancellationToken: cancellationToken);
-                    payment.StripePaymentIntentId = intent.Id;
-                    payment.Status = PaymentStatus.Processing;
-                    order.PaymentStatus = "Pending";
-                    _context.Payments.Add(payment);
-                    await _context.SaveChangesAsync(cancellationToken);
-
-                    return Result<PaymentDto>.Success(new PaymentDto
-                    {
-                        Id = payment.Id,
-                        OrderId = payment.OrderId,
-                        Amount = payment.Amount,
-                        Status = payment.Status,
-                        Method = payment.Method,
-                        StripePaymentIntentId = payment.StripePaymentIntentId,
-                        StripeSessionId = null,
-                        StripeClientSecret = intent.ClientSecret,
-                        CreatedAt = payment.CreatedAt,
-                        PaidAt = payment.PaidAt,
-                        FailedAt = payment.FailedAt,
-                        FailureReason = payment.FailureReason,
-                        LoyaltyPointsUsed = payment.LoyaltyPointsUsed
-                    });
-                }
-                catch (StripeException ex)
-                {
-                    payment.Status = PaymentStatus.Failed;
-                    payment.FailureReason = ex.StripeError?.Message ?? ex.Message;
-                    payment.FailedAt = DateTime.UtcNow;
-                    order.PaymentStatus = "Failed";
-                    _context.Payments.Add(payment);
-                    await _context.SaveChangesAsync(cancellationToken);
-                    return Result<PaymentDto>.Failure("Stripe payment failed: " + payment.FailureReason);
-                }
+                        Name = $"CampusEats Order #{order.OrderNumber}",
+                        Description = $"Order ID: {order.Id}"
+                    },
+                    UnitAmount = (long)(request.Amount * 100)
+                },
+                Quantity = 1
             }
+        },
+        SuccessUrl = $"http://localhost:5002/checkout/success?session_id={{CHECKOUT_SESSION_ID}}&order_id={order.Id}",
+        CancelUrl = $"http://localhost:5002/checkout/cancel?order_id={order.Id}",
+        Metadata = new Dictionary<string, string>
+        {
+            ["OrderId"] = order.Id.ToString(),
+            ["UserId"] = order.UserId.ToString()
+        }
+    };
+
+    var sessionService = new Stripe.Checkout.SessionService(_stripeClient);
+
+    try
+    {
+        var session = await sessionService.CreateAsync(sessionOptions, cancellationToken: cancellationToken);
+        
+        payment.StripeSessionId = session.Id;
+        payment.Status = PaymentStatus.Pending;
+        order.PaymentStatus = "Pending";
+        
+        _context.Payments.Add(payment);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return Result<PaymentDto>.Success(new PaymentDto
+        {
+            Id = payment.Id,
+            OrderId = payment.OrderId,
+            Amount = payment.Amount,
+            Status = payment.Status,
+            Method = payment.Method,
+            StripeSessionId = payment.StripeSessionId,
+            StripeClientSecret = session.Url, // URL-ul de redirect
+            CreatedAt = payment.CreatedAt
+        });
+    }
+    catch (StripeException ex)
+    {
+        payment.Status = PaymentStatus.Failed;
+        payment.FailureReason = ex.StripeError?.Message ?? ex.Message;
+        payment.FailedAt = DateTime.UtcNow;
+        order.PaymentStatus = "Failed";
+        _context.Payments.Add(payment);
+        await _context.SaveChangesAsync(cancellationToken);
+        return Result<PaymentDto>.Failure("Stripe payment failed: " + payment.FailureReason);
+    }
+}
             else if (method == PaymentMethod.Cash)
             {
                 payment.Status = PaymentStatus.Pending;

@@ -1,0 +1,73 @@
+﻿@page "/checkout/{OrderId:guid}"
+@using CampusEats.Frontend.Services
+@using CampusEats.Frontend.Models
+@inject ApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Redirecting to Stripe...</PageTitle>
+
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 text-center">
+            <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <h4>Redirecționare către Stripe Checkout...</h4>
+            <p class="text-muted">Vei fi redirectat în câteva secunde...</p>
+            
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger mt-4">@errorMessage</div>
+                <button class="btn btn-primary" @onclick="GoBack">Înapoi</button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid OrderId { get; set; }
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var order = await Api.GetOrderByIdAsync(OrderId);
+            
+            if (order == null)
+            {
+                errorMessage = "Comandă negăsită";
+                return;
+            }
+
+            // Creăm Checkout Session
+            var paymentRequest = new ProcessPaymentRequest
+            {
+                OrderId = OrderId,
+                PaymentMethod = "Card",
+                Amount = order.TotalAmount
+            };
+
+            var paymentDto = await Api.ProcessPaymentAsync(paymentRequest);
+
+            if (paymentDto?.StripeClientSecret != null)
+            {
+                // Redirect la Stripe Checkout URL
+                Navigation.NavigateTo(paymentDto.StripeClientSecret, forceLoad: true);
+            }
+            else
+            {
+                errorMessage = "Nu s-a putut crea sesiunea de plată";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Eroare: {ex.Message}";
+        }
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/orders");
+    }
+}

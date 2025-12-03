@@ -1,0 +1,24 @@
+﻿@page "/checkout/cancel"
+@inject NavigationManager Navigation
+
+<PageTitle>Plată Anulată</PageTitle>
+
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 text-center">
+            <i class="bi bi-x-circle-fill text-warning" style="font-size: 5rem;"></i>
+            <h2 class="mt-4">Plată Anulată</h2>
+            <p class="lead">Plata nu a fost finalizată.</p>
+            <button class="btn btn-primary mt-3" @onclick="GoToOrders">
+                Înapoi la Comenzi
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private void GoToOrders()
+    {
+        Navigation.NavigateTo("/orders");
+    }
+}
