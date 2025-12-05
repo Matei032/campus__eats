@@ -18,7 +18,8 @@ builder.Services.AddScoped<LocalStorageService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<AuthenticationStateProvider, CustomAuthStateProvider>();
 builder.Services.AddScoped<CartService>();
-builder.Services.AddScoped<CampusEats.Frontend.Services.OrderService>();
+builder.Services.AddScoped<OrderService>();
+builder.Services.AddScoped<LoyaltyService>();
 builder.Services.AddAuthorizationCore();
 
 builder.Services.AddTransient<AuthHeaderHandler>();

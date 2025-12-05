@@ -1,5 +1,6 @@
 ﻿using System.Net.Http.Json;
 using CampusEats.Frontend.Models;
+using CampusEats.Frontend.Models.Auth;
 using CampusEats.Frontend.Models.Requests;
 
 namespace CampusEats.Frontend.Services
@@ -73,6 +74,19 @@ namespace CampusEats.Frontend.Services
         public async Task<List<OrderDto>> GetUserOrdersAsync(Guid userId)
         {
             return await _httpClient.GetFromJsonAsync<List<OrderDto>>($"api/orders/user/{userId}") ?? new();
+        }
+        
+        public async Task<UserDto?> GetCurrentUserAsync()
+        {
+            try
+            {
+                return await _httpClient.GetFromJsonAsync<UserDto>("api/auth/me");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error getting current user: {ex.Message}");
+                return null;
+            }
         }
 
         // Folosit în OrderDetails.razor
