@@ -5,6 +5,7 @@ public record InventoryReportDto
     public DateTime? ReportDate { get; init; }
     public int TotalOrdersProcessed { get; init; }
     public int TotalItemsSold { get; init; }
+    public decimal TotalRevenue { get; init; }
     public List<InventoryItemDto> InventoryItems { get; init; } = new();
 }
 

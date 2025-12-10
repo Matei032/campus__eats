@@ -31,7 +31,7 @@ public class LoyaltyService
     /// <summary>
     /// Obține doar punctele curente (wrapper peste GetLoyaltyInfo)
     /// </summary>
-    public async Task<int> GetPoints()
+    public async Task<decimal> GetPoints()
     {
         try
         {
@@ -49,7 +49,7 @@ public class LoyaltyService
     /// Redeem (folosește) puncte de loialitate
     /// Backend: POST /api/loyalty/redeem
     /// </summary>
-    public async Task<bool> Redeem(Guid userId, int pointsToRedeem)
+    public async Task<bool> Redeem(Guid userId, decimal pointsToRedeem)
     {
         try
         {
@@ -87,9 +87,9 @@ public class LoyaltyService
 public class LoyaltyPointsDto
 {
     public Guid UserId { get; set; }
-    public int CurrentPoints { get; set; }
-    public int TotalEarned { get; set; }
-    public int TotalRedeemed { get; set; }
+    public decimal CurrentPoints { get; set; }
+    public decimal TotalEarned { get; set; }
+    public decimal TotalRedeemed { get; set; }
     public decimal PointsValue { get; set; }
 }
 
@@ -97,7 +97,7 @@ public class LoyaltyTransactionDto
 {
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
-    public int PointsChange { get; set; }
+    public decimal PointsChange { get; set; }
     public string Type { get; set; } = "";
     public string Description { get; set; } = "";
     public Guid?  OrderId { get; set; }

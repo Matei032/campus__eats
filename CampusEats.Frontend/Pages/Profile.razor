@@ -46,32 +46,16 @@ else
         </h5>
 
         <div class="d-flex align-items-baseline mb-2">
-            <span class="display-5 fw-bold me-2">@loyaltyPoints</span>
+            <span class="display-5 fw-bold me-2">@loyaltyPoints.ToString("F2")</span>
             <span class="text-secondary">puncte</span>
         </div>
 
         <p class="text-muted">
             Valoare totală: <b>@loyaltyPointsRON.ToString("0.00") RON</b>
         </p>
-
-        <p class="small text-muted mb-1">Total câștigate: @totalEarned</p>
-        <p class="small text-muted">Total folosite: @totalRedeemed</p>
-
-        <div class="progress mb-3" style="height:10px;">
-            <div class="progress-bar bg-warning" role="progressbar"
-                 style="width: @(Math.Min(loyaltyPoints,100))%;">
-            </div>
-        </div>
-
-        <div class="d-flex gap-2">
-            <button class="btn btn-warning w-50 fw-semibold" @onclick="Redeem50">
-                Folosește 50 puncte
+            <button class="btn btn-secondary w-100 fw-semibold" @onclick="ToggleTransactions">
+                Istoric Puncte Loialitate
             </button>
-
-            <button class="btn btn-secondary w-50 fw-semibold" @onclick="ToggleTransactions">
-                Istoric tranzacții
-            </button>
-        </div>
 
         @if (!string.IsNullOrWhiteSpace(statusMessage))
         {
@@ -106,7 +90,7 @@ else
                     @foreach (var tx in transactions)
                     {
                         <tr>
-                            <td class="fw-bold">@tx.PointsChange</td>
+                            <td class="fw-bold">@tx.PointsChange.ToString("F2")</td>
                             <td>@tx.Type</td>
                             <td>@tx.Description</td>
                             <td>@tx.CreatedAt.ToString("dd MMM yyyy, HH:mm")</td>
@@ -120,179 +104,298 @@ else
     </div>
 </div>
 
-<!-- CARD: Orders -->
+<!-- CARD: Active Orders -->
+@if (ActiveOrders.Any())
+{
+    <div class="card shadow-sm mb-4 border-0 fade-in border-start border-5 border-success">
+        <div class="card-body">
+            <h5 class="fw-bold text-success mb-3">
+                <i class="bi bi-hourglass-split me-2"></i>Comenzi Active
+            </h5>
+            
+            <div class="list-group">
+                @foreach (var order in ActiveOrders)
+                {
+                    <div class="list-group-item flex-column align-items-start p-3 mb-2 border rounded shadow-sm bg-light">
+                        <div class="d-flex w-100 justify-content-between border-bottom pb-2 mb-2">
+                            <h5 class="mb-1 fw-bold">#@GetShortId(order.OrderNumber)</h5>
+                            <div>
+                                <span class="badge rounded-pill @GetBadgeClass(order.Status) px-2 py-1">
+                                    @order.Status
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Items (Active) -->
+                         <div class="mb-2">
+                            <ul class="list-group list-group-flush small bg-transparent">
+                                @foreach (var item in order.OrderItems)
+                                {
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-1 border-0 bg-transparent">
+                                        <span><span class="fw-bold">@item.Quantity x</span> @item.ProductName</span>
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+                             <small class="text-muted">Total:</small>
+                             <strong class="text-dark">@order.TotalAmount.ToString("F2") RON</strong>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<!-- CARD: Order History -->
 <div class="card shadow-sm mb-5 border-0 fade-in" style="animation-delay:.2s">
     <div class="card-body">
-        <h5 class="fw-semibold mb-3">
-            <i class="bi bi-bag-check me-2"></i>Comenzile mele
-        </h5>
+        
+        <button class="btn btn-secondary w-100 fw-semibold" @onclick="ToggleHistory">
+            Istoric Comenzi (@(HistoryOrders.Count()))
+        </button>
 
-        @if (orders == null)
+        @if (historyVisible)
         {
-        <p class="text-muted">Nu s-au putut încărca comenzile.</p>
-        }
-        else if (orders.Count == 0)
-        {
-        <p class="text-muted fst-italic">Nu ai comenzi.</p>
-        }
-        else
-        {
-        <ul class="list-group">
-            @foreach (var order in orders)
-            {
-            <li class="list-group-item d-flex justify-content-between align-items-center fade-in-small">
-                            <span>
-                                <b>Comanda #@order.Id.ToString().Substring(0,6)</b>
-                                <div class="text-muted small">@order.Status</div>
-                            </span>
+            <div class="mt-4">
+                @if (HistoryOrders.Count() == 0)
+                {
+                    <p class="text-muted fst-italic text-center">Nu ai comenzi anterioare.</p>
+                }
+                else
+                {
+                    <div class="list-group">
+                        @foreach (var order in HistoryOrders) 
+                        {
+                            <div class="list-group-item flex-column align-items-start p-4 mb-3 border rounded shadow-sm">
+                                <div class="d-flex w-100 justify-content-between border-bottom pb-2 mb-2">
+                                    <h5 class="mb-1 fw-bold">Comanda #@GetShortId(order.OrderNumber)</h5>
+                                    <div class="text-end">
+                                        <small class="text-muted d-block">@order.CreatedAt.ToLocalTime().ToString("dd MMM yyyy, HH:mm")</small>
+                                        <span class="badge rounded-pill @GetBadgeClass(order.Status) px-2 py-1 mt-1">
+                                            @order.Status
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <small class="text-muted fw-bold">Articole comandate:</small>
+                                    <ul class="list-group list-group-flush mt-1 small">
+                                        @foreach (var item in order.OrderItems)
+                                        {
+                                            <li class="list-group-item d-flex justify-content-between align-items-center px-0 py-1 border-0">
+                                                <span>
+                                                    <span class="badge bg-light text-dark border me-2">x @item.Quantity</span>
+                                                    @item.ProductName
+                                                </span>
+                                                <span>@((item.UnitPrice * item.Quantity).ToString("F2")) RON</span>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
 
-                <span class="fw-bold">@order.TotalAmount lei</span>
-            </li>
-            }
-        </ul>
+                                <div class="d-flex w-100 justify-content-between align-items-center pt-2 border-top">
+                                    <span class="text-muted">Total</span>
+                                    <strong class="fs-5">@order.TotalAmount.ToString("F2") RON</strong>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
         }
     </div>
 </div>
 }
 
 @code {
-bool isLoading = true;
-bool transactionsVisible = false;
-bool isLoadingTransactions = false;
+    bool isLoading = true;
+    bool transactionsVisible = false;
+    bool isLoadingTransactions = false;
+    
+    // History Toggle
+    bool historyVisible = false;
 
-UserDto? user;
+    UserDto? user;
 
-int loyaltyPoints;
-decimal loyaltyPointsRON;
-int totalEarned;
-int totalRedeemed;
+    decimal loyaltyPoints;
+    decimal loyaltyPointsRON;
+    decimal totalEarned;
+    decimal totalRedeemed;
 
-string statusMessage = "";
+    string statusMessage = "";
 
-List<LoyaltyTransactionDto> transactions = new();
-List<OrderDto> orders = new();
+    List<LoyaltyTransactionDto> transactions = new();
+    
+    // All orders loaded on init
+    List<OrderDto> AllOrders = new();
+    
+    // Computed Properties
+    IEnumerable<OrderDto> ActiveOrders => AllOrders
+        .Where(o => o.Status == "Pending" || o.Status == "Preparing" || o.Status == "Ready")
+        .OrderByDescending(o => o.CreatedAt);
 
-protected override async Task OnInitializedAsync()
-{
-if (!AuthState.IsAuthenticated)
-return;
+    IEnumerable<OrderDto> HistoryOrders => AllOrders
+        .Where(o => !(o.Status == "Pending" || o.Status == "Preparing" || o.Status == "Ready"))
+        .OrderByDescending(o => o.CreatedAt);
 
-try
-{
-user = await Http.GetFromJsonAsync<UserDto>("/api/auth/me");
 
-if (user != null)
-{
-var info = await Http.GetFromJsonAsync<LoyaltyPointsDto>("/api/loyalty/points");
-
-if (info != null)
-{
-loyaltyPoints = info.CurrentPoints;
-loyaltyPointsRON = info.PointsValue;
-totalEarned = info.TotalEarned;
-totalRedeemed = info.TotalRedeemed;
-}
-
-orders = await Http.GetFromJsonAsync<List<OrderDto>>
-($"/api/orders/user/{user.Id}") ?? new();
-}
-}
-catch { }
-
-isLoading = false;
-}
-
-async Task Redeem50()
-{
-if (user == null) return;
-
-var data = new { UserId = user.Id, PointsToRedeem = 50 };
-var response = await Http.PostAsJsonAsync("/api/loyalty/redeem", data);
-
-if (response.IsSuccessStatusCode)
-{
-loyaltyPoints -= 50;
-loyaltyPointsRON = loyaltyPoints * 0.1m;
-statusMessage = "Ai folosit 50 puncte.";
-}
-else
-{
-statusMessage = "Nu ai destule puncte.";
-}
-}
-
-void ToggleTransactions()
-{
-transactionsVisible = !transactionsVisible;
-if (transactionsVisible)
-LoadTransactions();
-}
-
-async Task LoadTransactions()
-{
-    isLoadingTransactions = true;
-    transactions = new();
-    StateHasChanged(); // actualizează imediat mesajul "Se încarcă..."
-
-    try
+    protected override async Task OnInitializedAsync()
     {
-        transactions =
-            await Http.GetFromJsonAsync<List<LoyaltyTransactionDto>>(
-                "/api/loyalty/transactions?page=1&pageSize=50"
-            ) ?? new();
+        if (!AuthState.IsAuthenticated)
+            return;
+
+        try
+        {
+            user = await Http.GetFromJsonAsync<UserDto>("/api/auth/me");
+
+            if (user != null)
+            {
+                var info = await Http.GetFromJsonAsync<LoyaltyPointsDto>("/api/loyalty/points");
+
+                if (info != null)
+                {
+                    loyaltyPoints = info.CurrentPoints;
+                    loyaltyPointsRON = info.PointsValue;
+                    totalEarned = info.TotalEarned;
+                    totalRedeemed = info.TotalRedeemed;
+                }
+                
+                // Fetch ALL orders so we can separate Active vs History immediately
+                AllOrders = await Http.GetFromJsonAsync<List<OrderDto>>($"/api/orders/user/{user.Id}") ?? new();
+            }
+        }
+        catch { }
+
+        isLoading = false;
     }
-    catch
+
+    void ToggleHistory()
     {
+        historyVisible = !historyVisible;
+    }
+    
+    // ... Methods below remain same (Redeem50, ToggleTransactions, LoadTransactions, GetInitials)
+    
+    async Task Redeem50()
+
+    {
+        if (user == null) return;
+
+        var data = new { UserId = user.Id, PointsToRedeem = 50 };
+        var response = await Http.PostAsJsonAsync("/api/loyalty/redeem", data);
+
+        if (response.IsSuccessStatusCode)
+        {
+            loyaltyPoints -= 50;
+            loyaltyPointsRON = loyaltyPoints * 1.0m;
+            statusMessage = "Ai folosit 50 puncte.";
+        }
+        else
+        {
+            statusMessage = "Nu ai destule puncte.";
+        }
+    }
+
+    async Task ToggleTransactions()
+    {
+        transactionsVisible = !transactionsVisible;
+        if (transactionsVisible)
+            await LoadTransactions();
+    }
+
+    async Task LoadTransactions()
+    {
+        isLoadingTransactions = true;
         transactions = new();
+        StateHasChanged(); // actualizează imediat mesajul "Se încarcă..."
+
+        try
+        {
+            transactions =
+                await Http.GetFromJsonAsync<List<LoyaltyTransactionDto>>(
+                    "/api/loyalty/transactions?page=1&pageSize=50"
+                ) ?? new();
+        }
+        catch
+        {
+            transactions = new();
+        }
+
+        isLoadingTransactions = false;
+        StateHasChanged();
     }
 
-    isLoadingTransactions = false;
-    StateHasChanged();
-}
 
+    string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0][0].ToString().ToUpper();
+        return (parts[0][0].ToString() + parts[^1][0]).ToUpper();
+    }
 
-string GetInitials(string name)
-{
-if (string.IsNullOrWhiteSpace(name)) return "?";
-var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-if (parts.Length == 1) return parts[0][0].ToString().ToUpper();
-return (parts[0][0].ToString() + parts[^1][0]).ToUpper();
-}
+    private string GetShortId(string orderNumber)
+    {
+        if (string.IsNullOrEmpty(orderNumber)) return "";
+        return orderNumber.Length > 8 ? orderNumber.Substring(orderNumber.Length - 8) : orderNumber;
+    }
 
-public class LoyaltyPointsDto
-{
-public Guid UserId { get; set; }
-public int CurrentPoints { get; set; }
-public int TotalEarned { get; set; }
-public int TotalRedeemed { get; set; }
-public decimal PointsValue { get; set; }
-}
+    private string GetBadgeClass(string status) => status switch
+    {
+        "Pending" => "bg-warning text-dark",
+        "Preparing" => "bg-primary",
+        "Ready" => "bg-success",
+        "Completed" => "bg-secondary",
+        _ => "bg-light text-dark border"
+    };
 
-public class LoyaltyTransactionDto
-{
-public Guid Id { get; set; }
-public Guid UserId { get; set; }
-public int PointsChange { get; set; }
-public string Type { get; set; } = "";
-public string Description { get; set; } = "";
-public Guid? OrderId { get; set; }
-public DateTime CreatedAt { get; set; }
-}
+    public class LoyaltyPointsDto
+    {
+        public Guid UserId { get; set; }
+        public decimal CurrentPoints { get; set; }
+        public decimal TotalEarned { get; set; }
+        public decimal TotalRedeemed { get; set; }
+        public decimal PointsValue { get; set; }
+    }
 
-public class UserDto
-{
-public Guid Id { get; set; }
-public string FullName { get; set; } = "";
-public string Email { get; set; } = "";
-public string Role { get; set; } = "";
-}
+    public class LoyaltyTransactionDto
+    {
+        public Guid Id { get; set; }
+        public Guid UserId { get; set; }
+        public decimal PointsChange { get; set; }
+        public string Type { get; set; } = "";
+        public string Description { get; set; } = "";
+        public Guid? OrderId { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
 
-public class OrderDto
-{
-public Guid Id { get; set; }
-public string Status { get; set; } = "";
-public decimal TotalAmount { get; set; }
-}
+    public class UserDto
+    {
+        public Guid Id { get; set; }
+        public string FullName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Role { get; set; } = "";
+    }
+
+    public class OrderDto
+    {
+        public Guid Id { get; set; }
+        public string OrderNumber { get; set; } = "";
+        public string Status { get; set; } = "";
+        public decimal TotalAmount { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public List<OrderItemDto> OrderItems { get; set; } = new();
+    }
+
+    public class OrderItemDto
+    {
+        public string ProductName { get; set; } = "";
+        public int Quantity { get; set; }
+        public decimal UnitPrice { get; set; }
+    }
 }
 
 <style>

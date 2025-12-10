@@ -20,7 +20,7 @@ public class PaymentDto
     public string? FailureReason { get; set; }
     
     // Loyalty
-    public int? LoyaltyPointsUsed { get; set; }
+    public decimal? LoyaltyPointsUsed { get; set; }
 }
 
 public class ProcessPaymentRequest
@@ -28,5 +28,5 @@ public class ProcessPaymentRequest
     public Guid OrderId { get; set; }
     public string PaymentMethod { get; set; } = "Card";
     public decimal Amount { get; set; }
-    public int? LoyaltyPointsUsed { get; set; }
+    public decimal? LoyaltyPointsUsed { get; set; }
 }

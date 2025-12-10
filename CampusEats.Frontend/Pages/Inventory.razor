@@ -10,8 +10,10 @@
 
 <div class="row g-3 align-items-end mb-4">
     <div class="col-auto">
-        <label class="form-label">Report date</label>
-        <InputDate @bind-Value="CurrentDate" class="form-control" />
+        <label class="form-label">Report date (Last 30 days)</label>
+        <InputDate @bind-Value="CurrentDate" class="form-control" 
+                   min="@MinDate.ToString("yyyy-MM-dd")" 
+                   max="@MaxDate.ToString("yyyy-MM-dd")" />
     </div>
     <div class="col-auto">
         <button class="btn btn-primary" @onclick="Load">Load Report</button>
@@ -38,18 +40,21 @@ else
     <div class="card mb-4 shadow-sm">
         <div class="card-body">
             <div class="row text-center">
-                <div class="col-md-4 border-end">
+                <div class="col-md-3 border-end">
                     <h6 class="text-muted">Date</h6>
                     <p class="fs-5 fw-bold">@(Report.ReportDate?.ToString("yyyy-MM-dd") ?? "-")</p>
                 </div>
-                <div class="col-md-4 border-end">
+                <div class="col-md-3 border-end">
                     <h6 class="text-muted">Total Orders</h6>
-                    @* DTO-ul tău folosește TotalOrdersProcessed *@
                     <p class="fs-5 fw-bold text-primary">@Report.TotalOrdersProcessed</p>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3 border-end">
                     <h6 class="text-muted">Total Items Sold</h6>
                     <p class="fs-5 fw-bold text-success">@Report.TotalItemsSold</p>
+                </div>
+                <div class="col-md-3">
+                    <h6 class="text-muted">Total Earnings</h6>
+                    <p class="fs-5 fw-bold text-dark">@Report.TotalRevenue.ToString("0.00") RON</p>
                 </div>
             </div>
         </div>
@@ -89,6 +94,9 @@ else
 
 @code {
     private DateTime CurrentDate = DateTime.Now;
+    private DateTime MaxDate = DateTime.Now;
+    private DateTime MinDate = DateTime.Now.AddDays(-30);
+    
     private InventoryReportDto? Report;
     private bool IsLoading = false;
     private string ErrorMessage = string.Empty;

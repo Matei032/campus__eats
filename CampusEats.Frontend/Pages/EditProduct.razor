@@ -21,7 +21,13 @@ else
             </div>
             <div class="col-sm-6">
                 <label class="form-label">Category</label>
-                <InputText class="form-control" @bind-Value="_vm.Category" />
+                <InputSelect class="form-select" @bind-Value="_vm.Category">
+                    <option value="">Select a category</option>
+                    <option value="Main">Main</option>
+                    <option value="Drink">Drink</option>
+                    <option value="Dessert">Dessert</option>
+                    <option value="Snack">Snack</option>
+                </InputSelect>
             </div>
             <div class="col-12">
                 <label class="form-label">Description</label>

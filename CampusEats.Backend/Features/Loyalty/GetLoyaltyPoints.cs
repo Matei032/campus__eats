@@ -13,7 +13,7 @@ public static class GetLoyaltyPoints
     public class Handler : IRequestHandler<Query, Result<LoyaltyPointsDto>>
     {
         private readonly AppDbContext _context;
-        private const decimal PointsToMoneyRatio = 0.1m;
+        private const decimal PointsToMoneyRatio = 1.0m;
 
         public Handler(AppDbContext context)
         {

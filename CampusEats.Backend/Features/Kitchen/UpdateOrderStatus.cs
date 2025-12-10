@@ -49,8 +49,15 @@ public static class UpdateOrderStatus
                 // 🎁 ACORDĂ PUNCTE LOYALTY AUTOMAT (doar prima dată când devine Completed)
                 if (!wasCompleted)
                 {
-                    // 1 RON = 10 puncte loyalty
-                    var pointsToAward = (int)(order.TotalAmount * 10);
+                    // Calculăm suma plătită efectiv (fără puncte)
+                    var loyaltyPayments = await _context.Payments
+                        .Where(p => p.OrderId == order.Id && p.Method == PaymentMethod.LoyaltyPoints)
+                        .SumAsync(p => p.Amount, cancellationToken);
+
+                    var netAmount = order.TotalAmount - loyaltyPayments;
+                    
+                    // 10% din suma plătită efectiv (ex: 22 RON -> 2.2 puncte)
+                    var pointsToAward = netAmount * 0.10m;
 
                     var user = await _context.Users.FindAsync(new object[] { order.UserId }, cancellationToken);
                     if (user != null)
@@ -64,7 +71,7 @@ public static class UpdateOrderStatus
                             UserId = user.Id,
                             PointsChange = pointsToAward,
                             Type = LoyaltyTransactionType.Earned,
-                            Description = $"Earned {pointsToAward} points from order #{order.OrderNumber}",
+                            Description = $"Earned {pointsToAward:F2} points from order #{order.OrderNumber}",
                             OrderId = order.Id,
                             CreatedAt = DateTime.UtcNow
                         };

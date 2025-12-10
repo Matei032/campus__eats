@@ -31,5 +31,5 @@ public class Payment
     public DateTime? PaidAt { get; set; }
     public DateTime? FailedAt { get; set; }
     public string? FailureReason { get; set; }
-    public int? LoyaltyPointsUsed { get; set; }
+    public decimal? LoyaltyPointsUsed { get; set; }
 }

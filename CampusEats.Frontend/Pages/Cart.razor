@@ -36,7 +36,7 @@
                             <div class="d-flex justify-content-between align-items-center border-bottom py-3">
                                 <div>
                                     <h5 class="mb-1">@item.Name</h5>
-                                    <small class="text-muted">Preț unitar: @item.UnitPrice. ToString("F2") RON</small>
+                                    <small class="text-muted">Preț unitar: @item.UnitPrice.ToString("F2") RON</small>
                                 </div>
                                 <div class="d-flex align-items-center">
                                     <input type="number" class="form-control form-control-sm me-3" style="width: 70px;" 
@@ -73,7 +73,7 @@
                             <div class="alert alert-warning d-flex align-items-center mb-3" style="padding: 0.75rem;">
                                 <i class="bi bi-stars fs-5 me-2"></i>
                                 <div>
-                                    <div><strong>Puncte disponibile:</strong> @availableLoyaltyPoints</div>
+                                    <div><strong>Puncte disponibile:</strong> @availableLoyaltyPoints.ToString("F2")</div>
                                     <small class="text-muted">Valoare: @loyaltyPointsValue.ToString("F2") RON</small>
                                 </div>
                             </div>
@@ -85,7 +85,7 @@
                         </div>
 
                         <!-- Loyalty Points Discount -->
-                        @if (loyaltyPointsToUse > 0)
+                        @if (useLoyaltyPoints && loyaltyPointsToUse > 0)
                         {
                             <div class="d-flex justify-content-between text-success mb-2">
                                 <span>
@@ -103,76 +103,49 @@
                         </div>
                         
                         <div class="mb-3">
-                            <label class="form-label fw-semibold">Metodă Plată</label>
-                            <select class="form-select" @bind="PaymentMethod" @bind:after="OnPaymentMethodChanged">
-                                <option value="Cash">💵 Cash la ridicare</option>
-                                <option value="Card">💳 Card (Stripe)</option>
-                                <option value="LoyaltyPoints">⭐ Puncte Loialitate</option>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="useLoyaltyPoints" 
+                                       @bind="useLoyaltyPoints" 
+                                       @bind:after="OnLoyaltyToggleChanged"
+                                       disabled="@(availableLoyaltyPoints < 1)">
+                                <label class="form-check-label" for="useLoyaltyPoints">
+                                    Folosește Puncte Loialitate (@availableLoyaltyPoints.ToString("F2") disponibile)
+                                </label>
+                            </div>
+
+                            @if (useLoyaltyPoints)
+                            {
+                                <div class="p-3 bg-light rounded border mb-3">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span class="small fw-bold">
+                                            <i class="bi bi-stars text-warning me-1"></i>
+                                            Puncte folosite:
+                                        </span>
+                                        <span class="badge bg-warning text-dark">@loyaltyPointsToUse.ToString("F2")</span>
+                                    </div>
+                                    
+                                    <div class="d-flex justify-content-between align-items-center small bg-white p-2 rounded">
+                                        <span>Discount aplicat:</span>
+                                        <strong class="text-success">@GetLoyaltyDiscount().ToString("F2") RON</strong>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Metodă Plată (Rest de plată: @GetFinalTotal().ToString("F2") RON)</label>
+                            <select class="form-select" @bind="PaymentMethod">
+                                <option value="Cash">Cash la ridicare</option>
+                                <option value="Card">Card (Stripe)</option>
                             </select>
                         </div>
 
-                        <!-- Loyalty Points Slider -->
-                        @if (PaymentMethod == "LoyaltyPoints" || showLoyaltySlider)
-                        {
-                            <div class="mb-3 p-3 bg-light rounded border">
-                                <label class="form-label small fw-bold d-flex justify-content-between align-items-center">
-                                    <span>
-                                        <i class="bi bi-stars text-warning me-1"></i>
-                                        Puncte de folosit:
-                                    </span>
-                                    <span class="badge bg-warning text-dark">@loyaltyPointsToUse puncte</span>
-                                </label>
-                                
-                                <input type="range" 
-                                       class="form-range" 
-                                       min="0" 
-                                       max="@GetMaxUsablePoints()"
-                                       step="10"
-                                       @bind="loyaltyPointsToUse"
-                                       @bind:after="StateHasChanged" />
-                                
-                                <div class="d-flex justify-content-between small text-muted mt-1">
-                                    <span>0</span>
-                                    <span>@GetMaxUsablePoints()</span>
-                                </div>
-                                
-                                <div class="mt-2 p-2 bg-white rounded small">
-                                    <div class="d-flex justify-content-between">
-                                        <span>Discount total:</span>
-                                        <strong class="text-success">@GetLoyaltyDiscount().ToString("F2") RON</strong>
-                                    </div>
-                                    <small class="text-muted d-block mt-1">
-                                        <i class="bi bi-info-circle me-1"></i>1 punct = 0. 10 RON
-                                    </small>
-                                </div>
-                            </div>
-
-                            @if (PaymentMethod == "LoyaltyPoints" && GetFinalTotal() > 0)
-                            {
-                                <div class="alert alert-warning small py-2 mb-3">
-                                    <i class="bi bi-exclamation-triangle me-1"></i>
-                                    Punctele acoperă doar @GetLoyaltyDiscount().ToString("F2") RON.  
-                                    Restul de <strong>@GetFinalTotal().ToString("F2") RON</strong> va fi plătit cash.
-                                </div>
-                            }
-                        }
-
-                        @if (PaymentMethod == "Card")
+                        @if (PaymentMethod == "Card" && GetFinalTotal() > 0)
                         {
                             <div class="alert alert-info small py-2 mb-3">
                                 <i class="bi bi-credit-card me-1"></i> 
-                                Vei fi redirecționat către Stripe pentru plată securizată.
+                                Vei fi redirecționat către Stripe pentru plata restului de @GetFinalTotal().ToString("F2") RON.
                             </div>
-                        }
-                        else if (PaymentMethod == "LoyaltyPoints")
-                        {
-                            @if (GetFinalTotal() == 0)
-                            {
-                                <div class="alert alert-success small py-2 mb-3">
-                                    <i class="bi bi-check-circle me-1"></i>
-                                    Comanda va fi plătită 100% cu puncte de loialitate!  
-                                </div>
-                            }
                         }
 
                         <div class="mb-3">
@@ -181,7 +154,7 @@
                                       placeholder="Ex: Fără tacâmuri, interfon 05... "></textarea>
                         </div>
 
-                        @if (! string.IsNullOrEmpty(ErrorMessage))
+                        @if (!string.IsNullOrEmpty(ErrorMessage))
                         {
                             <div class="alert alert-danger small py-2">
                                 <i class="bi bi-exclamation-triangle me-1"></i>
@@ -199,18 +172,7 @@
                             }
                             else
                             {
-                                @if (PaymentMethod == "Card")
-                                {
-                                    <span><i class="bi bi-credit-card me-2"></i>Continuă la Plată</span>
-                                }
-                                else if (PaymentMethod == "LoyaltyPoints")
-                                {
-                                    <span><i class="bi bi-stars me-2"></i>Plătește cu Puncte</span>
-                                }
-                                else
-                                {
-                                    <span><i class="bi bi-bag-check me-2"></i>Finalizează Comanda</span>
-                                }
+                                <span><i class="bi bi-bag-check me-2"></i>Finalizează Comanda</span>
                             }
                         </button>
                     </div>
@@ -226,10 +188,10 @@
     private bool IsProcessing = false;
     private bool isLoadingPoints = true;
     private string ErrorMessage = "";
-    private int availableLoyaltyPoints = 0;
+    private decimal availableLoyaltyPoints = 0;
     private decimal loyaltyPointsValue = 0m;
-    private int loyaltyPointsToUse = 0;
-    private bool showLoyaltySlider = false;
+    private bool useLoyaltyPoints = false;
+    private decimal loyaltyPointsToUse = 0;
 
     protected override async Task OnInitializedAsync()
     {
@@ -244,27 +206,23 @@
             isLoadingPoints = true;
             StateHasChanged();
 
-            var loyaltyInfo = await LoyaltyService. GetLoyaltyInfo();
+            var loyaltyInfo = await LoyaltyService.GetLoyaltyInfo();
             
             if (loyaltyInfo != null)
             {
                 availableLoyaltyPoints = loyaltyInfo.CurrentPoints;
-                loyaltyPointsValue = loyaltyInfo. PointsValue;
-                
-                Console.WriteLine($"✅ Loyalty loaded: {availableLoyaltyPoints} points = {loyaltyPointsValue:F2} RON");
+                loyaltyPointsValue = loyaltyInfo.PointsValue;
             }
             else
             {
                 availableLoyaltyPoints = 0;
                 loyaltyPointsValue = 0m;
-                Console.WriteLine("⚠️ No loyalty info returned");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Error loading loyalty: {ex.Message}");
+            Console.WriteLine($"Error loading loyalty: {ex.Message}");
             availableLoyaltyPoints = 0;
-            loyaltyPointsValue = 0m;
         }
         finally
         {
@@ -273,35 +231,31 @@
         }
     }
 
-    private void OnPaymentMethodChanged()
+    private void OnLoyaltyToggleChanged()
     {
-        if (PaymentMethod == "LoyaltyPoints")
+        if (useLoyaltyPoints)
         {
-            showLoyaltySlider = true;
             loyaltyPointsToUse = GetMaxUsablePoints();
         }
         else
         {
-            showLoyaltySlider = false;
             loyaltyPointsToUse = 0;
         }
         StateHasChanged();
     }
 
-    private int GetMaxUsablePoints()
+    private decimal GetMaxUsablePoints()
     {
-        // 1 punct = 0.10 RON, deci pentru 8. 00 RON → max 80 puncte
-        var cartTotalInPoints = (int)Math.Floor(CartService.Total / 0.1m);
-        var maxPoints = Math.Min(availableLoyaltyPoints, cartTotalInPoints);
-        
-        Console.WriteLine($"📊 Cart: {CartService.Total:F2} RON → max {cartTotalInPoints} points.  Available: {availableLoyaltyPoints}.  Using: {maxPoints}");
-        
+        // 1 punct = 1 RON
+        // Putem folosi maxim cat e totalul comenzii sau cat avem disponibil
+        var maxPoints = Math.Min(availableLoyaltyPoints, CartService.Total);
         return maxPoints;
     }
 
     private decimal GetLoyaltyDiscount()
     {
-        return loyaltyPointsToUse * 0.1m; // 1 punct = 0.10 RON
+        if (!useLoyaltyPoints) return 0m;
+        return loyaltyPointsToUse * 1.0m;
     }
 
     private decimal GetFinalTotal()
@@ -317,15 +271,14 @@
 
     private async Task UpdateQty(CartItem item, ChangeEventArgs e)
     {
-        if (int.TryParse(e.Value?. ToString(), out int qty) && qty > 0)
+        if (int.TryParse(e.Value?.ToString(), out int qty) && qty > 0)
         {
-            await CartService. UpdateQty(item.ProductId, qty);
+            await CartService.UpdateQty(item.ProductId, qty);
             
-            // Recalculează loyalty points dacă suntem în modul de plată cu puncte
-            if (PaymentMethod == "LoyaltyPoints")
+            if (useLoyaltyPoints)
             {
-                var maxUsable = GetMaxUsablePoints();
-                loyaltyPointsToUse = Math.Min(loyaltyPointsToUse, maxUsable);
+                // Recalculăm automat punctele folosite dacă se schimbă totalul
+                loyaltyPointsToUse = GetMaxUsablePoints();
                 StateHasChanged();
             }
         }
@@ -339,7 +292,7 @@
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
 
-        if (user.Identity?. IsAuthenticated != true)
+        if (user.Identity?.IsAuthenticated != true)
         {
             ErrorMessage = "Trebuie să fii autentificat pentru a plasa comanda.";
             IsProcessing = false;
@@ -349,37 +302,23 @@
         var userIdClaim = user.FindFirst(c => c.Type == "sub") ??  
                           user.FindFirst(c => c.Type == ClaimTypes.NameIdentifier);
         
-        if (userIdClaim == null || ! Guid.TryParse(userIdClaim.Value, out Guid userId))
+        if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out Guid userId))
         {
             ErrorMessage = "Eroare de sesiune. Te rugăm să te reloghezi.";
             IsProcessing = false;
             return;
         }
 
-        // Validare loyalty points
-        if (PaymentMethod == "LoyaltyPoints")
-        {
-            if (loyaltyPointsToUse > availableLoyaltyPoints)
-            {
-                ErrorMessage = $"Nu ai suficiente puncte.  Disponibile: {availableLoyaltyPoints}, selectate: {loyaltyPointsToUse}";
-                IsProcessing = false;
-                return;
-            }
-
-            if (loyaltyPointsToUse == 0)
-            {
-                ErrorMessage = "Selectează câte puncte vrei să folosești (minim 10).";
-                IsProcessing = false;
-                return;
-            }
-        }
-
+        // Create Order Command
+        // We initially send PaymentMethod as the "Primary" method (e.g. Card/Cash), 
+        // even if we partially pay with Loyalty.
+        
         var command = new CreateOrderCommand
         {
             UserId = userId,
-            PaymentMethod = PaymentMethod,
+            PaymentMethod = PaymentMethod, 
             Notes = OrderNotes,
-            Items = CartService. Items. Select(i => new OrderItemRequest
+            Items = CartService.Items.Select(i => new OrderItemRequest
             {
                 ProductId = i.ProductId,
                 Quantity = i.Quantity,
@@ -389,53 +328,84 @@
 
         try 
         {
-            var order = await Api. CreateOrderAsync(command);
+            var order = await Api.CreateOrderAsync(command);
             
             if (order == null)
             {
-                ErrorMessage = "Nu am putut plasa comanda.  Verifică consola pentru detalii.";
+                ErrorMessage = "Nu am putut plasa comanda. Verifică consola pentru detalii.";
                 IsProcessing = false;
                 return;
             }
 
-            // Procesare în funcție de metoda de plată
-            if (PaymentMethod == "Cash")
+            // 1. Process Loyalty Payment (if selected)
+            if (useLoyaltyPoints && loyaltyPointsToUse > 0)
             {
-                await CartService.Clear();
-                NavigationManager.NavigateTo("/orders");
-            }
-            else if (PaymentMethod == "Card")
-            {
-                await CartService.Clear();
-                NavigationManager.NavigateTo($"/checkout/{order.Id}");
-            }
-            else if (PaymentMethod == "LoyaltyPoints")
-            {
-                var paymentRequest = new ProcessPaymentRequest
+                var loyaltyPayment = new ProcessPaymentRequest
                 {
                     OrderId = order.Id,
                     PaymentMethod = "LoyaltyPoints",
-                    Amount = CartService.Total,
+                    Amount = GetLoyaltyDiscount(),
                     LoyaltyPointsUsed = loyaltyPointsToUse
                 };
 
-                var paymentResult = await Api.ProcessPaymentAsync(paymentRequest);
+                var loyaltyResult = await Api.ProcessPaymentAsync(loyaltyPayment);
+                if (loyaltyResult == null)
+                {
+                    Console.WriteLine("⚠️ Loyalty payment failed.");
+                }
+            }
 
-                if (paymentResult != null)
+            // 2. Process Remaining Balance
+            var remainingAmount = GetFinalTotal();
+
+            if (remainingAmount > 0)
+            {
+                if (PaymentMethod == "Card")
                 {
+                    var cardPayment = new ProcessPaymentRequest
+                    {
+                        OrderId = order.Id,
+                        PaymentMethod = "Card",
+                        Amount = remainingAmount
+                    };
+
+                    var cardResult = await Api.ProcessPaymentAsync(cardPayment);
+                    if (cardResult?.StripeClientSecret != null)
+                    {
+                        await CartService.Clear();
+                        NavigationManager.NavigateTo(cardResult.StripeClientSecret, forceLoad: true);
+                        return;
+                    }
+                    else
+                    {
+                        ErrorMessage = "Eroare la inițierea plății cu cardul.";
+                    }
+                }
+                else // Cash
+                {
+                    var cashPayment = new ProcessPaymentRequest
+                    {
+                        OrderId = order.Id,
+                        PaymentMethod = "Cash",
+                        Amount = remainingAmount
+                    };
+                    await Api.ProcessPaymentAsync(cashPayment);
+                    
                     await CartService.Clear();
-                    NavigationManager.NavigateTo("/orders");
+                    NavigationManager.NavigateTo("/profile");
                 }
-                else
-                {
-                    ErrorMessage = "Eroare la procesarea plății cu puncte de loialitate.";
-                }
+            }
+            else
+            {
+                // Covered fully by Loyalty
+                await CartService.Clear();
+                NavigationManager.NavigateTo("/profile");
             }
         }
         catch (Exception ex)
         {
             ErrorMessage = $"Eroare: {ex.Message}";
-            Console.WriteLine($"❌ Checkout error: {ex}");
+            Console.WriteLine($"Checkout error: {ex}");
         }
         finally
         {

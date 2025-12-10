@@ -6,7 +6,7 @@ public class LoyaltyTransaction
     
     public Guid UserId { get; set; }
     public User User { get; set; } = null!;
-    public int PointsChange { get; set; }
+    public decimal PointsChange { get; set; }
     public LoyaltyTransactionType Type { get; set; }
     public string Description { get; set; } = string.Empty;
     public Guid? OrderId { get; set; }
