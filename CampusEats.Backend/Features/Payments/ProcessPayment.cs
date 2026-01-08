@@ -51,12 +51,12 @@ public static class ProcessPayment
 
             if (order is null)
                 return Result<PaymentDto>.Failure("Order not found");
+            if (order.PaymentStatus == "Paid")
+                return Result<PaymentDto>.Failure("Order is already paid");
+
             // 1. Calculate how much has been paid so far
             var existingPayments = await _context.Payments
-                .Where(p => p.OrderId == order.Id && (p.Status == PaymentStatus.Completed || p.Status == PaymentStatus.Pending)) // Pending card payments count towards "attempted" but careful with double charging. 
-                                                                                                                                  // For simplicity/safety, let's only count Completed for determining what's left, 
-                                                                                                                                  // BUT if there's a Pending Stripe session, we might want to be careful. 
-                                                                                                                                  // For now, let's sum Completed to see what's truly paid.
+                .Where(p => p.OrderId == order.Id && (p.Status == PaymentStatus.Completed || p.Status == PaymentStatus.Pending)) 
                 .Where(p => p.Status == PaymentStatus.Completed)
                 .SumAsync(p => p.Amount, cancellationToken);
 
@@ -66,8 +66,8 @@ public static class ProcessPayment
             if (request.Amount <= 0)
                 return Result<PaymentDto>.Failure("Amount must be greater than 0");
 
-            if (request.Amount > remainingAmount + 0.01m) // Small grace for rounding
-                return Result<PaymentDto>.Failure($"Amount ({request.Amount}) exceeds remaining balance ({remainingAmount})");
+            if (Math.Abs(request.Amount - remainingAmount) > 0.01m)
+                return Result<PaymentDto>.Failure($"Payment amount ({request.Amount}) doesn't match remaining balance ({remainingAmount})");
 
             if (!Enum.TryParse<PaymentMethod>(request.PaymentMethod, true, out var method))
                 return Result<PaymentDto>.Failure("Invalid payment method");

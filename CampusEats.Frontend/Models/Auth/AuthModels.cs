@@ -35,7 +35,7 @@ namespace CampusEats.Frontend.Models.Auth
         public string Role { get; set; } = string.Empty;
         public string PhoneNumber { get; set; } = string.Empty;
         public string? StudentId { get; set; }
-        public int LoyaltyPoints { get; set; }
+        public decimal LoyaltyPoints { get; set; }
         public bool IsActive { get; set; }
     }
 }
