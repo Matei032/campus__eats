@@ -20,7 +20,21 @@ using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using Stripe;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory,
+    WebRootPath = "wwwroot"
+});
+
+// Dezactivează file watching în producție
+if (!builder.Environment.IsDevelopment())
+{
+    builder.Configuration.Sources
+        .OfType<Microsoft.Extensions.Configuration.Json.JsonConfigurationSource>()
+        .ToList()
+        .ForEach(s => s.ReloadOnChange = false);
+}
 
 // ✅ CONFIGURARE PORT PENTRU RENDER
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
