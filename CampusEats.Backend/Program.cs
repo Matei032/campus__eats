@@ -26,29 +26,26 @@ var builder = WebApplication.CreateBuilder(args);
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// ✅ DATABASE CONFIG - suportă atât local cât și Render
+// ✅ DATABASE CONFIG - folosește connection string exact cum vine
 var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL");
 
 if (string.IsNullOrEmpty(connectionString))
 {
-    // Local development - folosește appsettings.json
+    // Local development
     connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     Console.WriteLine("📍 Using local database connection");
 }
 else
 {
-    // Render production - folosește DATABASE_URL
+    // Production - folosește exact ce vine din DATABASE_URL
     Console.WriteLine("📍 Using Render database connection");
     
-    // Adaugă SSL mode dacă lipsește
-    if (!connectionString.Contains("sslmode", StringComparison.OrdinalIgnoreCase))
-    {
-        connectionString += connectionString.Contains("?") 
-            ? "&sslmode=require" 
-            : "?sslmode=require";
-    }
+    // Debug: afișează ultimele caractere pentru verificare
+    var lastPart = connectionString.Length > 50 ? connectionString.Substring(connectionString.Length - 50) : connectionString;
+    Console.WriteLine($"🔗 Connection string ends with: ...{lastPart}");
 }
 
+// Construiește data source DIRECT, fără modificări
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
 dataSourceBuilder.EnableDynamicJson();
 var dataSource = dataSourceBuilder.Build();
