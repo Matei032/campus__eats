@@ -1,4 +1,4 @@
-﻿using CampusEats.Backend.Common;
+using CampusEats.Backend.Common;
 using CampusEats.Backend.Common.DTOs;
 using CampusEats.Backend.Domain;
 using CampusEats.Backend.Persistence;
@@ -84,6 +84,9 @@ public static class ProcessPayment
 
             if (method == PaymentMethod.Card)
             {
+                // ✅ Obține URL-ul frontend dinamic
+                var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:5002";
+
                 // Creăm Stripe Checkout Session (nu PaymentIntent)
                 var sessionOptions = new Stripe.Checkout.SessionCreateOptions
                 {
@@ -106,8 +109,9 @@ public static class ProcessPayment
                             Quantity = 1
                         }
                     },
-                    SuccessUrl = $"http://localhost:5002/checkout/success?session_id={{CHECKOUT_SESSION_ID}}&order_id={order.Id}",
-                    CancelUrl = $"http://localhost:5002/checkout/cancel?order_id={order.Id}",
+                    // ✅ URL-uri dinamice pentru success și cancel
+                    SuccessUrl = $"{frontendUrl}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}&order_id={order.Id}",
+                    CancelUrl = $"{frontendUrl}/checkout/cancel?order_id={order.Id}",
                     Metadata = new Dictionary<string, string>
                     {
                         ["OrderId"] = order.Id.ToString(),
@@ -123,8 +127,6 @@ public static class ProcessPayment
                     
                     payment.StripeSessionId = session.Id;
                     payment.Status = PaymentStatus.Pending;
-                    // Order PaymentStatus rămâne cum era sau devine Partial dacă nu e full? 
-                    // Dacă e doar Card (full), e Pending. Dacă e split, tot Pending e partea de card.
                     
                     _context.Payments.Add(payment);
                     await _context.SaveChangesAsync(cancellationToken);
@@ -146,8 +148,7 @@ public static class ProcessPayment
                     payment.Status = PaymentStatus.Failed;
                     payment.FailureReason = ex.StripeError?.Message ?? ex.Message;
                     payment.FailedAt = DateTime.UtcNow;
-                    // Nu marcam comanda Failed decat daca e totul failed? 
-                    // Lasam Order PaymentStatus neatins aici momentan.
+                    
                     _context.Payments.Add(payment);
                     await _context.SaveChangesAsync(cancellationToken);
                     return Result<PaymentDto>.Failure("Stripe payment failed: " + payment.FailureReason);
@@ -156,9 +157,6 @@ public static class ProcessPayment
             else if (method == PaymentMethod.Cash)
             {
                 payment.Status = PaymentStatus.Pending;
-                // La Cash, plata nu e Completed, e Pending pana o incaseaza livratorul.
-                // Dar daca avem Loyalty (Completed) + Cash (Pending), statusul comenzii e Partial?
-                // Sa zicem ca e "Pending" ca status general daca mai e ceva de plata (fizic sau online).
             }
             else if (method == PaymentMethod.LoyaltyPoints)
             {
@@ -170,8 +168,6 @@ public static class ProcessPayment
                 payment.Status = PaymentStatus.Completed;
                 payment.PaidAt = DateTime.UtcNow;
                 payment.LoyaltyPointsUsed = pointsNeeded;
-                
-                // Loyalty e instant paid.
             }
             else
             {
@@ -179,18 +175,9 @@ public static class ProcessPayment
             }
 
             _context.Payments.Add(payment);
-            await _context.SaveChangesAsync(cancellationToken); // Save payment first
+            await _context.SaveChangesAsync(cancellationToken);
 
             // 3. Update Order Payment Status based on TOTAL processed
-            var totalPaidOrPending = existingPayments + payment.Amount; 
-            // Daca metoda e Cash, payment e Pending. Daca e Card, e Pending. Daca e Loyalty, e Completed.
-            // Vrem sa stim daca am acoperit 'teoretic' totul.
-            
-            // Recalculate totals including this new payment (whether pending or completed)
-            // We assume if Card session created -> user will pay.
-            // If Cash selected -> user will pay.
-            // So if (Existing + Current Request Amount) >= Total -> consider "Paid" (if loyalty only) or "Pending" (if has cash/card)
-            
             var amountCovered = existingPayments;
             if (payment.Status == PaymentStatus.Completed) amountCovered += payment.Amount;
             
@@ -201,13 +188,8 @@ public static class ProcessPayment
             }
             else
             {
-                // Not fully paid yet (or waiting for external ACTION like Cash/Card)
-                // If we secured the INTENT to pay the rest (via this Cash or Card request), 
-                // and (Existing + Request) >= Total, then we are "good" to proceed with order logic generally, 
-                // but the status strictly depends on money received.
-                
                 if (existingPayments > 0)
-                    order.PaymentStatus = "Partial"; // Some part (Loyalty) was paid, rest is pending.
+                    order.PaymentStatus = "Partial";
                 else 
                     order.PaymentStatus = "Pending";
             }
