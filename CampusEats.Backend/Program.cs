@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using System.Text;
 using CampusEats.Backend.Common;
 using CampusEats.Backend.Common.Behaviors;
@@ -27,15 +27,25 @@ var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 // ✅ DATABASE CONFIG - suportă atât local cât și Render
-var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL") 
-    ?? builder.Configuration.GetConnectionString("DefaultConnection");
+var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL");
 
-// Render PostgreSQL necesită SSL Mode=Require
-if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DATABASE_URL")))
+if (string.IsNullOrEmpty(connectionString))
 {
-    if (!connectionString.Contains("SSL Mode") && !connectionString.Contains("SslMode"))
+    // Local development - folosește appsettings.json
+    connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    Console.WriteLine("📍 Using local database connection");
+}
+else
+{
+    // Render production - folosește DATABASE_URL
+    Console.WriteLine("📍 Using Render database connection");
+    
+    // Adaugă SSL mode dacă lipsește
+    if (!connectionString.Contains("sslmode", StringComparison.OrdinalIgnoreCase))
     {
-        connectionString += ";SSL Mode=Require;Trust Server Certificate=true";
+        connectionString += connectionString.Contains("?") 
+            ? "&sslmode=require" 
+            : "?sslmode=require";
     }
 }
 
@@ -59,7 +69,7 @@ var stripeWebhookSecret = Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SEC
 
 builder.Services.Configure<StripeSettings>(options =>
 {
-    options.PublicKey = stripePublicKey;      // ✅ Acum folosește PublicKey
+    options.PublicKey = stripePublicKey;
     options.SecretKey = stripeSecretKey;
     options.WebhookSecret = stripeWebhookSecret;
 });
@@ -159,17 +169,6 @@ app.UseCors("AllowFrontend");
 // ✅ Swagger disponibil și în producție pentru testare
 app.UseSwagger();
 app.UseSwaggerUI();
-
-// ❌ NU folosi HTTPS redirect pe Render (comentează sau șterge)
-// if (app.Environment.IsDevelopment())
-// {
-//     app.UseSwagger();
-//     app.UseSwaggerUI();
-// }
-// else
-// {
-//     app.UseHttpsRedirection();
-// }
 
 app.UseAuthentication();
 
