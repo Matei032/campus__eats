@@ -15,10 +15,14 @@ RUN dotnet publish "CampusEats.Frontend.csproj" -c Release -o /app/publish
 FROM nginx:alpine AS final
 WORKDIR /usr/share/nginx/html
 
+# Șterge conținutul default nginx
 RUN rm -rf ./*
 
+# Copiază fișierele publicate Blazor
 COPY --from=build /app/publish/wwwroot .
-COPY CampusEats.Frontend/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copiază nginx.conf în locația corectă
+COPY --from=build /src/CampusEats.Frontend/nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 80
 
