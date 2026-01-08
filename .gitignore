@@ -1,11 +1,15 @@
+# ✅ Asigură-te că acestea NU sunt în .gitignore:
+# Dockerfile
+# .dockerignore
+# docker-compose.yml
+
+# ✅ Dar acestea DA trebuie excluse:
+bin/
+obj/
+*.user
 .vs/
-*.vsidx
-
-[Bb]in/
-[Oo]bj/
-
-.idea/
-
+.vscode/
+*.Development.json
 appsettings.Development.json
-
-docker-compose.override.yml
+.env
+.DS_Store

@@ -22,20 +22,51 @@ using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// DATABASE CONFIG
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+// ✅ CONFIGURARE PORT PENTRU RENDER
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
+// ✅ DATABASE CONFIG - suportă atât local cât și Render
+var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL") 
+    ?? builder.Configuration.GetConnectionString("DefaultConnection");
+
+// Render PostgreSQL necesită SSL Mode=Require
+if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DATABASE_URL")))
+{
+    if (!connectionString.Contains("SSL Mode") && !connectionString.Contains("SslMode"))
+    {
+        connectionString += ";SSL Mode=Require;Trust Server Certificate=true";
+    }
+}
+
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
 dataSourceBuilder.EnableDynamicJson();
 var dataSource = dataSourceBuilder.Build();
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(dataSource));
 
-// STRIPE CONFIG
-builder.Services.Configure<StripeSettings>(builder.Configuration.GetSection("Stripe"));
+// ✅ STRIPE CONFIG - suportă environment variables
+var stripeSecretKey = Environment.GetEnvironmentVariable("STRIPE_SECRET_KEY") 
+                      ?? builder.Configuration["Stripe:SecretKey"] 
+                      ?? "";
+
+var stripePublicKey = Environment.GetEnvironmentVariable("STRIPE_PUBLIC_KEY") 
+                      ?? builder.Configuration["Stripe:PublicKey"] 
+                      ?? "";
+
+var stripeWebhookSecret = Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET") 
+                          ?? builder.Configuration["Stripe:WebhookSecret"] 
+                          ?? "";
+
+builder.Services.Configure<StripeSettings>(options =>
+{
+    options.PublicKey = stripePublicKey;      // ✅ Acum folosește PublicKey
+    options.SecretKey = stripeSecretKey;
+    options.WebhookSecret = stripeWebhookSecret;
+});
 
 builder.Services.AddSingleton<Stripe.StripeClient>(provider =>
 {
-    var stripeSettings = builder.Configuration.GetSection("Stripe").Get<StripeSettings>();
-    return new Stripe.StripeClient(stripeSettings!.SecretKey);
+    return new Stripe.StripeClient(stripeSecretKey);
 });
 
 // MEDIATR + VALIDATION
@@ -49,7 +80,16 @@ builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 // JWT SERVICE
 builder.Services.AddScoped<IJwtService, JwtService>();
 
-// AUTHENTICATION
+// ✅ AUTHENTICATION - suportă environment variables pentru JWT
+var jwtSecretKey = Environment.GetEnvironmentVariable("JWT_SECRET_KEY") 
+    ?? builder.Configuration["Jwt:SecretKey"]!;
+
+var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") 
+    ?? builder.Configuration["Jwt:Issuer"]!;
+
+var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") 
+    ?? builder.Configuration["Jwt:Audience"]!;
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -57,11 +97,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SecretKey"]!)),
+                Encoding.UTF8.GetBytes(jwtSecretKey)),
             ValidateIssuer = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidIssuer = jwtIssuer,
             ValidateAudience = true,
-            ValidAudience = builder.Configuration["Jwt:Audience"],
+            ValidAudience = jwtAudience,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero,
             RoleClaimType = ClaimTypes.Role,
@@ -89,7 +129,7 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-// CORS (replace with dynamic for any localhost port if needed)
+// ✅ CORS - permite localhost + render.com
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -100,7 +140,10 @@ builder.Services.AddCors(options =>
             try
             {
                 var uri = new Uri(origin);
-                return uri.Host == "localhost" || uri.Host == "127.0.0.1";
+                return uri.Host == "localhost" 
+                    || uri.Host == "127.0.0.1" 
+                    || uri.Host.EndsWith(".onrender.com")
+                    || uri.Host.EndsWith(".render.com");
             }
             catch { return false; }
         })
@@ -113,15 +156,20 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 app.UseCors("AllowFrontend");
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-else
-{
-    app.UseHttpsRedirection();
-}
+// ✅ Swagger disponibil și în producție pentru testare
+app.UseSwagger();
+app.UseSwaggerUI();
+
+// ❌ NU folosi HTTPS redirect pe Render (comentează sau șterge)
+// if (app.Environment.IsDevelopment())
+// {
+//     app.UseSwagger();
+//     app.UseSwaggerUI();
+// }
+// else
+// {
+//     app.UseHttpsRedirection();
+// }
 
 app.UseAuthentication();
 
@@ -156,12 +204,26 @@ if (app.Environment.IsDevelopment())
 }
 app.UseAuthorization();
 
-// DATABASE SEEDING
+// ✅ DATABASE MIGRATION & SEEDING cu logging îmbunătățit
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await context.Database.MigrateAsync();
-    await DatabaseSeeder.SeedAsync(context);
+    try
+    {
+        Console.WriteLine("🔄 Applying migrations...");
+        await context.Database.MigrateAsync();
+        Console.WriteLine("✅ Migrations applied successfully");
+        
+        Console.WriteLine("🌱 Seeding database...");
+        await DatabaseSeeder.SeedAsync(context);
+        Console.WriteLine("✅ Database seeded successfully");
+    }
+    catch (Exception ex)
+    {
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "❌ Error during migration or seeding");
+        throw;
+    }
 }
 
 // ================== AUTH ENDPOINTS ==================
@@ -390,7 +452,6 @@ kitchenGroup.MapGet("/inventory/daily", async (DateTime? reportDate, ISender sen
 // ================== PAYMENTS ENDPOINT ==================
 var paymentsGroup = app.MapGroup("api/payments").WithTags("Payments");
 
-// Procesare plată (POST /api/payments/process)
 paymentsGroup.MapPost("/process", async (ProcessPayment.Command command, ISender sender) =>
     {
         var result = await sender.Send(command);
@@ -403,8 +464,6 @@ paymentsGroup.MapPost("/process", async (ProcessPayment.Command command, ISender
     .Produces<PaymentDto>(StatusCodes.Status200OK)
     .Produces<object>(StatusCodes.Status400BadRequest);
 
-// Istoric plăți pentru user
-// Merged endpoint (replace the two duplicates with this single block)
 paymentsGroup.MapGet("/user/{userId:guid}/history", async (Guid userId, int? page, int? pageSize, string? status, string? method, ISender sender, ClaimsPrincipal user) =>
     {
         var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
@@ -431,11 +490,8 @@ paymentsGroup.MapGet("/user/{userId:guid}/history", async (Guid userId, int? pag
     .Produces(StatusCodes.Status401Unauthorized)
     .Produces(StatusCodes.Status403Forbidden);
 
-
-// Istoric plăți pentru o comandă
 paymentsGroup.MapGet("/order/{orderId:guid}", async (Guid orderId, ISender sender, ClaimsPrincipal user) =>
     {
-        // Poți adăuga validări aici ca la orders
         var payments = await sender.Send(new GetOrderPayments.Query(orderId));
         return Results.Ok(payments);
     })
@@ -444,52 +500,71 @@ paymentsGroup.MapGet("/order/{orderId:guid}", async (Guid orderId, ISender sende
     .Produces<List<PaymentDto>>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status401Unauthorized);
 
-// STRIPE WEBHOOK ENDPOINT
-app.MapPost("/api/payments/webhook/stripe", async (HttpRequest req, AppDbContext db) =>
+// ✅ STRIPE WEBHOOK ENDPOINT - cu error handling îmbunătățit
+app.MapPost("/api/payments/webhook/stripe", async (HttpRequest req, AppDbContext db, IConfiguration config) =>
 {
     string json = await new StreamReader(req.Body).ReadToEndAsync();
-    var stripeSettings = app.Services.GetRequiredService<IConfiguration>().GetSection("Stripe").Get<StripeSettings>();
-    var stripeEvent = Stripe.EventUtility.ConstructEvent(json, req.Headers["Stripe-Signature"], stripeSettings?.WebhookSecret);
-
-    if (stripeEvent.Type == "checkout.session.completed")
-    {
-        var session = stripeEvent.Data.Object as Stripe.Checkout.Session;
-        if (session != null && session.Metadata.TryGetValue("OrderId", out var orderIdStr) && Guid.TryParse(orderIdStr, out var orderId))
-        {
-            var payment = await db.Payments.FirstOrDefaultAsync(p => p.StripeSessionId == session.Id);
-            var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
-            
-            if (payment != null && order != null)
-            {
-                payment.Status = PaymentStatus.Completed;
-                payment.PaidAt = DateTime.UtcNow;
-                order.PaymentStatus = "Paid";
-                await db.SaveChangesAsync();
-            }
-        }
-    }
-    else if (stripeEvent.Type == "checkout.session.expired")
-    {
-        var session = stripeEvent.Data.Object as Stripe.Checkout.Session;
-        if (session != null)
-        {
-            var payment = await db.Payments.FirstOrDefaultAsync(p => p.StripeSessionId == session.Id);
-            if (payment != null)
-            {
-                payment.Status = PaymentStatus.Failed;
-                payment.FailureReason = "Session expired";
-                payment.FailedAt = DateTime.UtcNow;
-                await db.SaveChangesAsync();
-            }
-        }
-    }
     
-    return Results.Ok();
-});
+    var webhookSecret = Environment.GetEnvironmentVariable("STRIPE_WEBHOOK_SECRET") 
+        ?? config["Stripe:WebhookSecret"];
+    
+    try
+    {
+        var stripeEvent = Stripe.EventUtility.ConstructEvent(
+            json, 
+            req.Headers["Stripe-Signature"], 
+            webhookSecret
+        );
+
+        if (stripeEvent.Type == "checkout.session.completed")
+        {
+            var session = stripeEvent.Data.Object as Stripe.Checkout.Session;
+            if (session != null && session.Metadata.TryGetValue("OrderId", out var orderIdStr) && Guid.TryParse(orderIdStr, out var orderId))
+            {
+                var payment = await db.Payments.FirstOrDefaultAsync(p => p.StripeSessionId == session.Id);
+                var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
+                
+                if (payment != null && order != null)
+                {
+                    payment.Status = PaymentStatus.Completed;
+                    payment.PaidAt = DateTime.UtcNow;
+                    order.PaymentStatus = "Paid";
+                    await db.SaveChangesAsync();
+                    
+                    Console.WriteLine($"✅ Payment completed for order {orderId}");
+                }
+            }
+        }
+        else if (stripeEvent.Type == "checkout.session.expired")
+        {
+            var session = stripeEvent.Data.Object as Stripe.Checkout.Session;
+            if (session != null)
+            {
+                var payment = await db.Payments.FirstOrDefaultAsync(p => p.StripeSessionId == session.Id);
+                if (payment != null)
+                {
+                    payment.Status = PaymentStatus.Failed;
+                    payment.FailureReason = "Session expired";
+                    payment.FailedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    
+                    Console.WriteLine($"❌ Payment expired for session {session.Id}");
+                }
+            }
+        }
+        
+        return Results.Ok();
+    }
+    catch (StripeException ex)
+    {
+        Console.WriteLine($"❌ Stripe webhook error: {ex.Message}");
+        return Results.BadRequest(new { error = ex.Message });
+    }
+})
+.AllowAnonymous();
 
 paymentsGroup.MapPatch("/{paymentId:guid}/refund", async (Guid paymentId, string? reason, ClaimsPrincipal user, ISender sender) =>
     {
-        // Doar Staff/Admin poate refunda!
         var userRole = user.FindFirst(ClaimTypes.Role)?.Value;
         if (userRole != "Staff" && userRole != "Admin")
             return Results.Forbid();
@@ -505,7 +580,6 @@ paymentsGroup.MapPatch("/{paymentId:guid}/refund", async (Guid paymentId, string
 
 paymentsGroup.MapGet("/", async (int page, int pageSize, string? status, string? method, ISender sender, ClaimsPrincipal user) =>
     {
-        // Securitate: doar Staff/Admin
         var userRole = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
         if (userRole != "Staff" && userRole != "Admin")
             return Results.Forbid();
@@ -523,7 +597,6 @@ paymentsGroup.MapGet("/", async (int page, int pageSize, string? status, string?
 // ================== LOYALTY ENDPOINTS ==================
 var loyaltyGroup = app.MapGroup("api/loyalty").WithTags("Loyalty");
 
-// Obține punctele curente ale user-ului
 loyaltyGroup.MapGet("/points", async (ClaimsPrincipal user, ISender sender) =>
 {
     var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
@@ -539,7 +612,6 @@ loyaltyGroup.MapGet("/points", async (ClaimsPrincipal user, ISender sender) =>
 .Produces(StatusCodes.Status401Unauthorized)
 .Produces<object>(StatusCodes.Status400BadRequest);
 
-// Istoric tranzacții loyalty
 loyaltyGroup.MapGet("/transactions", async (ClaimsPrincipal user, int page, int pageSize, ISender sender) =>
 {
     var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
@@ -555,14 +627,12 @@ loyaltyGroup.MapGet("/transactions", async (ClaimsPrincipal user, int page, int 
 .Produces(StatusCodes.Status401Unauthorized)
 .Produces<object>(StatusCodes.Status400BadRequest);
 
-// Redeem puncte pentru discount
 loyaltyGroup.MapPost("/redeem", async (RedeemLoyaltyPoints.Command command, ClaimsPrincipal user, ISender sender) =>
 {
     var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
     if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var authenticatedUserId))
         return Results.Unauthorized();
 
-    // User poate redeem doar pentru propriul său cont
     if (command.UserId != authenticatedUserId)
         return Results.Forbid();
 
@@ -576,7 +646,6 @@ loyaltyGroup.MapPost("/redeem", async (RedeemLoyaltyPoints.Command command, Clai
 .Produces(StatusCodes.Status403Forbidden)
 .Produces<object>(StatusCodes.Status400BadRequest);
 
-// Award points (doar Admin/Staff)
 loyaltyGroup.MapPost("/award", async (AwardLoyaltyPoints.Command command, ClaimsPrincipal user, ISender sender) =>
 {
     var userRole = user.FindFirst(ClaimTypes.Role)?.Value;
