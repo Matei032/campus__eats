@@ -1,10 +1,20 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36327.8 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CampusEats.Backend", "CampusEats.Backend\CampusEats.Backend.csproj", "{595F3EFC-287D-4440-9155-6AA9E5204974}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CampusEats.Frontend", "CampusEats.Frontend\CampusEats.Frontend.csproj", "{A0A64E44-A508-458E-B6CC-4D984069E57F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CampusEats.Tests", "CampusEats.Tests\CampusEats.Tests.csproj", "{EEEF1CBB-57AF-47CD-BD51-BA998ECE6BC7}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".github", ".github", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "workflows", "workflows", "{A2329B93-5070-40FC-A974-9F129622112E}"
+	ProjectSection(SolutionItems) = preProject
+		sonarcloud.yml = sonarcloud.yml
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -55,5 +65,11 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{A2329B93-5070-40FC-A974-9F129622112E} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {2A3E4864-2A38-499E-BC64-472B55B5EE08}
 	EndGlobalSection
 EndGlobal
