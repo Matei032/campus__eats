@@ -10,7 +10,6 @@ public class GetCurrentUserTests
     [Fact]
     public async Task Handle_ValidUserId_ReturnsUserDto()
     {
-        // Arrange
         var context = TestDbContextFactory.CreateInMemoryContext();
         var handler = new GetCurrentUser.Handler(context);
 
