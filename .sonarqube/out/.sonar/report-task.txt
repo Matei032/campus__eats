@@ -1,0 +1,7 @@
+organization=matei032
+projectKey=Matei032_campus__eats
+serverUrl=https://sonarcloud.io
+serverVersion=8.0.0.78371
+dashboardUrl=https://sonarcloud.io/dashboard?id=Matei032_campus__eats
+ceTaskId=AZvDjpe2GO73JMxp8Tto
+ceTaskUrl=https://sonarcloud.io/api/ce/task?id=AZvDjpe2GO73JMxp8Tto

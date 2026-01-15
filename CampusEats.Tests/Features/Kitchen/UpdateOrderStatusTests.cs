@@ -1,89 +1,192 @@
-using CampusEats.Backend.Persistence;
 using CampusEats.Backend.Domain;
-using CampusEats.Backend.Common;
-using CampusEats.Backend.Common.DTOs;
-using MediatR;
+using CampusEats.Backend.Features.Kitchen;
+using CampusEats.Backend.Persistence;
+using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Xunit;
 
-namespace CampusEats.Backend.Features.Kitchen;
+namespace CampusEats.Tests.Features.Kitchen;
 
-public static class UpdateOrderStatus
+public class UpdateOrderStatusTests
 {
-    public record Command : IRequest<Result<OrderDto>>
+    private AppDbContext GetInMemoryContext()
     {
-        public Guid OrderId { get; init; }
-        public string Status { get; init; } = string.Empty;
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        return new AppDbContext(options);
     }
 
-    internal sealed class Handler : IRequestHandler<Command, Result<OrderDto>>
+    [Fact]
+    public async Task Handle_UpdateToPreparing_Success()
     {
-        private readonly AppDbContext _context;
+        // Arrange
+        var context = GetInMemoryContext();
+        var userId = Guid.NewGuid();
+        var orderId = Guid.NewGuid();
 
-        // Define allowed transitions based on business rules used by tests
-        private static readonly Dictionary<string, string[]> AllowedTransitions = new(StringComparer.OrdinalIgnoreCase)
+        var user = new User
         {
-            ["Pending"] = new[] { "Preparing", "Cancelled" },
-            ["Preparing"] = new[] { "Ready", "Cancelled" },
-            ["Ready"] = new[] { "Completed", "Cancelled" },
-            // Completed and Cancelled are final - no transitions allowed
-            ["Completed"] = Array.Empty<string>(),
-            ["Cancelled"] = Array.Empty<string>()
+            Id = userId,
+            Email = "user@test. com",
+            PasswordHash = "hash",
+            FullName = "Test User",
+            Role = "Customer",
+            PhoneNumber = "+40712345678",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
         };
 
-        public Handler(AppDbContext context)
+        var order = new Order
         {
-            _context = context;
-        }
+            Id = orderId,
+            OrderNumber = "ORD-001",
+            UserId = userId,
+            TotalAmount = 50m,
+            Status = "Pending",
+            PaymentStatus = "Pending",
+            CreatedAt = DateTime.UtcNow
+        };
 
-        public async Task<Result<OrderDto>> Handle(Command request, CancellationToken cancellationToken)
+        context.Users.Add(user);
+        context.Orders.Add(order);
+        await context.SaveChangesAsync();
+
+        var handler = new UpdateOrderStatus.Handler(context);
+        var command = new UpdateOrderStatus.Command { OrderId = orderId, Status = "Preparing" };
+
+        // Act
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotBeNull();
+        result.Value!.Status.Should().Be("Preparing");
+
+        var updatedOrder = await context.Orders.FindAsync(orderId);
+        updatedOrder!.Status.Should().Be("Preparing");
+        updatedOrder.UpdatedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Handle_UpdateToCompleted_AwardsLoyaltyPoints()
+    {
+        // Arrange
+        var context = GetInMemoryContext();
+        var userId = Guid.NewGuid();
+        var orderId = Guid.NewGuid();
+
+        var user = new User
         {
-            var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == request.OrderId, cancellationToken);
+            Id = userId,
+            Email = "user@test.com",
+            PasswordHash = "hash",
+            FullName = "Test User",
+            Role = "Customer",
+            PhoneNumber = "+40712345678",
+            IsActive = true,
+            LoyaltyPoints = 0,
+            CreatedAt = DateTime.UtcNow
+        };
 
-            if (order is null)
-                return Result<OrderDto>.Failure("Order not found");
+        var order = new Order
+        {
+            Id = orderId,
+            OrderNumber = "ORD-001",
+            UserId = userId,
+            TotalAmount = 100m,
+            Status = "Ready",
+            PaymentStatus = "Paid",
+            CreatedAt = DateTime.UtcNow
+        };
 
-            var currentStatus = order.Status ?? string.Empty;
-            var newStatus = request.Status ?? string.Empty;
+        context.Users.Add(user);
+        context.Orders.Add(order);
+        await context.SaveChangesAsync();
 
-            // If order already completed or cancelled, disallow changes
-            if (string.Equals(currentStatus, "Completed", StringComparison.OrdinalIgnoreCase))
-                return Result<OrderDto>.Failure("Cannot change status of completed order");
+        var handler = new UpdateOrderStatus.Handler(context);
+        var command = new UpdateOrderStatus.Command { OrderId = orderId, Status = "Completed" };
 
-            if (string.Equals(currentStatus, "Cancelled", StringComparison.OrdinalIgnoreCase))
-                return Result<OrderDto>.Failure("Cannot change status of cancelled order");
+        // Act
+        var result = await handler.Handle(command, CancellationToken.None);
 
-            // Validate allowed transitions
-            if (!AllowedTransitions.TryGetValue(currentStatus, out var allowedTargets) || !allowedTargets.Contains(newStatus, StringComparer.OrdinalIgnoreCase))
-            {
-                return Result<OrderDto>.Failure("Invalid status transition");
-            }
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Status.Should().Be("Completed");
+        result.Value.PaymentStatus.Should().Be("Paid");
+        result.Value.CompletedAt.Should().NotBeNull();
 
-            // Apply transition
-            order.Status = newStatus;
-            order.UpdatedAt = DateTime.UtcNow;
+        var updatedOrder = await context.Orders.FindAsync(orderId);
+        updatedOrder!.Status.Should().Be("Completed");
+        updatedOrder.CompletedAt.Should().NotBeNull();
 
-            if (string.Equals(newStatus, "Completed", StringComparison.OrdinalIgnoreCase))
-            {
-                order.PaymentStatus = "Paid";
-                order.CompletedAt = DateTime.UtcNow;
-            }
+        var updatedUser = await context.Users.FindAsync(userId);
+        updatedUser!.LoyaltyPoints.Should().Be(10m); // 10% of 100 = 10 points
+    }
 
-            await _context.SaveChangesAsync(cancellationToken);
+    [Fact]
+    public async Task Handle_OrderNotFound_ReturnsFailure()
+    {
+        // Arrange
+        var context = GetInMemoryContext();
+        var handler = new UpdateOrderStatus.Handler(context);
+        var command = new UpdateOrderStatus.Command { OrderId = Guid.NewGuid(), Status = "Preparing" };
 
-            // Map to OrderDto (use existing DTO in Common.DTOs)
-            var dto = new OrderDto
-            {
-                Id = order.Id,
-                OrderNumber = order.OrderNumber,
-                Status = order.Status,
-                PaymentStatus = order.PaymentStatus,
-                CreatedAt = order.CreatedAt,
-                UpdatedAt = order.UpdatedAt,
-                CompletedAt = order.CompletedAt,
-                TotalAmount = order.TotalAmount
-            };
+        // Act
+        var result = await handler.Handle(command, CancellationToken.None);
 
-            return Result<OrderDto>.Success(dto);
-        }
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Should().Contain("not found");
+    }
+
+    [Fact]
+    public async Task Handle_UpdateAlreadyCompletedOrder_SucceedsButNoExtraPoints()
+    {
+        // Arrange
+        var context = GetInMemoryContext();
+        var userId = Guid.NewGuid();
+        var orderId = Guid.NewGuid();
+
+        var user = new User
+        {
+            Id = userId,
+            Email = "user@test.com",
+            PasswordHash = "hash",
+            FullName = "Test User",
+            Role = "Customer",
+            PhoneNumber = "+40712345678",
+            IsActive = true,
+            LoyaltyPoints = 10m,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var order = new Order
+        {
+            Id = orderId,
+            OrderNumber = "ORD-001",
+            UserId = userId,
+            TotalAmount = 100m,
+            Status = "Completed",
+            PaymentStatus = "Paid",
+            CompletedAt = DateTime.UtcNow.AddHours(-1),
+            CreatedAt = DateTime.UtcNow
+        };
+
+        context.Users.Add(user);
+        context.Orders.Add(order);
+        await context.SaveChangesAsync();
+
+        var handler = new UpdateOrderStatus.Handler(context);
+        var command = new UpdateOrderStatus.Command { OrderId = orderId, Status = "Completed" };
+
+        // Act
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+
+        var updatedUser = await context.Users.FindAsync(userId);
+        updatedUser!.LoyaltyPoints.Should().Be(10m); // No extra points awarded
     }
 }
